@@ -126,6 +126,11 @@ model Lienzo {
   created_at           DateTime           @default(now())
   proyecto             Proyecto           @relation(fields: [proyecto_id], references: [id], onDelete: Cascade)
   items                LienzoItem[]
+  // Presupuesto real creado en Ninesys al enviar el pedido por WhatsApp
+  // (CONTEXTO.md §15/§16) -- null hasta que se envía. Evita reenvíos
+  // duplicados y permite mostrar el estado en la UI del lienzo.
+  id_presupuesto_ninesys Int?
+  id_empresa_ninesys     Int?
 
   @@map("lienzos")
 }

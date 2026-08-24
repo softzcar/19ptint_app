@@ -6,6 +6,7 @@ import { proyectosRouter } from "./routes/proyectos.js";
 import { imagenesRouter } from "./routes/imagenes.js";
 import { lienzosRouter } from "./routes/lienzos.js";
 import { adminRouter } from "./routes/admin.js";
+import { ninesysRouter } from "./routes/ninesys.js";
 
 export function crearApp() {
   const app = express();
@@ -19,6 +20,7 @@ export function crearApp() {
   app.use("/api", imagenesRouter);
   app.use("/api", lienzosRouter);
   app.use("/api/admin", adminRouter);
+  app.use("/api/ninesys", ninesysRouter);
 
   app.use((err, req, res, next) => {
     console.error(err);
