@@ -1,0 +1,207 @@
+
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;700;900&display=swap" rel="stylesheet">
+<h2 class="sr-only">Tablero de identidad visual de Nineteen Print: logo, paleta de colores, tipografía y voz de marca</h2>
+
+<style>
+:root{
+  --np-teal:#0F6E56;--np-teal-d:#08402F;--np-teal-l:#E1F5EE;
+  --np-amber:#E8A020;--np-amber-l:#FFF3DC;
+  --np-ink:#0A2419;--np-gray:#F5F5F2;--np-white:#FFFFFF;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Montserrat','Helvetica Neue',Arial,sans-serif;background:transparent;}
+.board{display:flex;flex-direction:column;gap:2px;}
+.row{display:grid;gap:2px;}
+.card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:1.5rem;}
+.label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--color-text-secondary);margin-bottom:1rem;}
+
+/* LOGO CARDS */
+.logo-primary{background:var(--color-background-primary);}
+.logo-dark{background:var(--np-ink);}
+.logo-green{background:var(--np-teal);}
+
+.mark{display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:10px;background:var(--np-teal);color:#fff;font-family:'Montserrat',sans-serif;font-weight:900;font-size:20px;letter-spacing:-.04em;flex-shrink:0;}
+.mark-outline{background:transparent;border:2.5px solid var(--np-teal);color:var(--np-teal);}
+.mark-white{background:rgba(255,255,255,.15);color:#fff;}
+.mark-amber{background:var(--np-amber);color:var(--np-ink);}
+
+.wordmark{display:flex;flex-direction:column;line-height:1;}
+.wm-nineteen{font-family:'Montserrat',sans-serif;font-weight:300;font-size:22px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-text-primary);}
+.wm-print{font-family:'Montserrat',sans-serif;font-weight:900;font-size:22px;letter-spacing:.12em;text-transform:uppercase;color:var(--np-teal);}
+
+.wm-dark .wm-nineteen,.wm-dark .wm-print{color:#fff;}
+.wm-dark .wm-print{color:var(--np-amber);}
+
+.wm-green .wm-nineteen{color:rgba(255,255,255,.7);}
+.wm-green .wm-print{color:#fff;}
+
+.logo-row{display:flex;align-items:center;gap:14px;}
+
+/* SOLO MARK */
+.marks-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
+.mark-lg{width:64px;height:64px;border-radius:12px;font-size:24px;}
+.mark-sm{width:40px;height:40px;border-radius:8px;font-size:15px;}
+.mark-pill{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:30px;background:var(--np-teal);color:#fff;font-family:'Montserrat',sans-serif;font-weight:700;font-size:14px;letter-spacing:.06em;text-transform:uppercase;}
+
+/* COLORS */
+.palette{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
+.swatch{border-radius:var(--border-radius-md);overflow:hidden;}
+.swatch-color{height:64px;}
+.swatch-info{padding:8px 10px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-top:none;border-radius:0 0 var(--border-radius-md) var(--border-radius-md);}
+.swatch-name{font-size:11px;font-weight:700;color:var(--color-text-primary);}
+.swatch-hex{font-size:11px;color:var(--color-text-secondary);font-family:var(--font-mono);}
+
+/* TYPOGRAPHY */
+.type-row{display:flex;flex-direction:column;gap:12px;}
+.type-sample{border-left:3px solid var(--np-teal);padding-left:14px;}
+.type-use{font-size:11px;color:var(--color-text-secondary);margin-top:2px;}
+
+/* VOICE */
+.voice-row{display:flex;gap:10px;flex-wrap:wrap;}
+.voice-pill{padding:8px 18px;border-radius:30px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;}
+.v1{background:var(--np-teal-l);color:var(--np-teal-d);}
+.v2{background:var(--np-amber-l);color:#7A4A05;}
+.v3{background:var(--color-background-secondary);color:var(--color-text-secondary);}
+
+/* TAGLINE */
+.tagline-block{border-left:4px solid var(--np-amber);padding:14px 18px;background:var(--np-amber-l);border-radius:0 var(--border-radius-md) var(--border-radius-md) 0;}
+.tagline-text{font-family:'Montserrat',sans-serif;font-size:18px;font-weight:300;color:var(--np-ink);letter-spacing:.06em;}
+.tagline-text span{font-weight:900;color:var(--np-teal);}
+
+/* USAGE */
+.usage-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.usage-card{border-radius:var(--border-radius-md);padding:14px;}
+.usage-do{background:var(--np-teal-l);border:0.5px solid #9FE1CB;}
+.usage-dont{background:#FAECE7;border:0.5px solid #F5C4B3;}
+.usage-head{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;}
+.do-head{color:var(--np-teal-d);}
+.dont-head{color:#993C1D;}
+.usage-item{font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;display:flex;gap:6px;}
+.check{color:var(--np-teal);font-weight:700;}
+.cross{color:#D85A30;font-weight:700;}
+</style>
+
+<div class="board">
+
+  <p class="label" style="padding:0 0 .5rem;">Identidad visual · Nineteen Print</p>
+
+  <!-- ROW 1: Logo variants -->
+  <div class="row" style="grid-template-columns:1fr 1fr 1fr;">
+    <div class="card logo-primary">
+      <p class="label">Logo principal</p>
+      <div class="logo-row">
+        <div class="mark mark-lg">19</div>
+        <div class="wordmark">
+          <span class="wm-nineteen">nineteen</span>
+          <span class="wm-print">print</span>
+        </div>
+      </div>
+    </div>
+    <div class="card logo-dark">
+      <p class="label" style="color:rgba(255,255,255,.45);">Sobre fondo oscuro</p>
+      <div class="logo-row">
+        <div class="mark mark-lg mark-amber">19</div>
+        <div class="wordmark wm-dark">
+          <span class="wm-nineteen">nineteen</span>
+          <span class="wm-print">print</span>
+        </div>
+      </div>
+    </div>
+    <div class="card logo-green">
+      <p class="label" style="color:rgba(255,255,255,.55);">Sobre color primario</p>
+      <div class="logo-row">
+        <div class="mark mark-lg" style="background:rgba(255,255,255,.2);color:#fff;">19</div>
+        <div class="wordmark wm-green">
+          <span class="wm-nineteen">nineteen</span>
+          <span class="wm-print">print</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROW 2: Mark solo + tagline -->
+  <div class="row" style="grid-template-columns:1fr 2fr;">
+    <div class="card">
+      <p class="label">Símbolo solo</p>
+      <div class="marks-row">
+        <div class="mark mark-lg">19</div>
+        <div class="mark mark-lg mark-outline">19</div>
+        <div class="mark mark-sm">19</div>
+        <div class="mark mark-pill">NP</div>
+      </div>
+      <p style="font-size:11px;color:var(--color-text-secondary);margin-top:12px;">Perfil de WhatsApp · avatar Instagram · favicon</p>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;justify-content:center;gap:16px;">
+      <p class="label">Tagline</p>
+      <div class="tagline-block">
+        <span class="tagline-text"><span>El color</span> que se ve.</span>
+      </div>
+      <p style="font-size:12px;color:var(--color-text-secondary);">Versión larga: <em>"Sublimación y DTF de precisión — el color que exige tu producción."</em></p>
+    </div>
+  </div>
+
+  <!-- ROW 3: Colors + Typography -->
+  <div class="row" style="grid-template-columns:3fr 2fr;">
+    <div class="card">
+      <p class="label">Paleta de color</p>
+      <div class="palette">
+        <div class="swatch"><div class="swatch-color" style="background:#0F6E56;"></div><div class="swatch-info"><p class="swatch-name">Teal</p><p class="swatch-hex">#0F6E56</p></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#0A2419;"></div><div class="swatch-info"><p class="swatch-name">Ink</p><p class="swatch-hex">#0A2419</p></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#E8A020;"></div><div class="swatch-info"><p class="swatch-name">Gold</p><p class="swatch-hex">#E8A020</p></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#E1F5EE;border:0.5px solid #9FE1CB;"></div><div class="swatch-info"><p class="swatch-name">Mint</p><p class="swatch-hex">#E1F5EE</p></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#F5F5F2;border:0.5px solid #ddd;"></div><div class="swatch-info"><p class="swatch-name">Paper</p><p class="swatch-hex">#F5F5F2</p></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <p class="label">Tipografía</p>
+      <div class="type-row">
+        <div class="type-sample">
+          <div style="font-family:'Montserrat',sans-serif;font-weight:900;font-size:22px;color:var(--color-text-primary);">Montserrat</div>
+          <div class="type-use">Black 900 · Titulares / logo</div>
+        </div>
+        <div class="type-sample">
+          <div style="font-family:'Montserrat',sans-serif;font-weight:700;font-size:16px;color:var(--color-text-primary);">Subtítulos Bold 700</div>
+          <div class="type-use">Secciones y énfasis</div>
+        </div>
+        <div class="type-sample">
+          <div style="font-family:'Montserrat',sans-serif;font-weight:300;font-size:14px;color:var(--color-text-primary);">Cuerpo Light 300</div>
+          <div class="type-use">Texto corrido y etiquetas</div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--color-text-secondary);margin-top:12px;">Google Fonts — gratuita. Instala en diseño, Office y teléfono.</p>
+    </div>
+  </div>
+
+  <!-- ROW 4: Voice + Usage -->
+  <div class="row" style="grid-template-columns:1fr 2fr;">
+    <div class="card">
+      <p class="label">Voz de marca</p>
+      <div class="voice-row">
+        <span class="voice-pill v1">Preciso</span>
+        <span class="voice-pill v2">Vibrante</span>
+        <span class="voice-pill v3">Confiable</span>
+      </div>
+      <p style="font-size:12px;color:var(--color-text-secondary);margin-top:12px;">Tono: directo, técnico sin ser frío. Como un socio de producción, no un diseñador gráfico.</p>
+    </div>
+    <div class="card">
+      <p class="label">Reglas de uso</p>
+      <div class="usage-row">
+        <div class="usage-card usage-do">
+          <p class="usage-head do-head"><i class="ti ti-check" aria-hidden="true"></i> Sí</p>
+          <p class="usage-item"><span class="check">✓</span>Teal sobre fondo blanco o papel</p>
+          <p class="usage-item"><span class="check">✓</span>Blanco sobre fondo teal o ink</p>
+          <p class="usage-item"><span class="check">✓</span>Gold como acento — no como color dominante</p>
+          <p class="usage-item"><span class="check">✓</span>Logo con espacio libre alrededor</p>
+        </div>
+        <div class="usage-card usage-dont">
+          <p class="usage-head dont-head"><i class="ti ti-x" aria-hidden="true"></i> No</p>
+          <p class="usage-item"><span class="cross">✗</span>Distorsionar o rotar el logo</p>
+          <p class="usage-item"><span class="cross">✗</span>Cambiar los pesos de tipografía</p>
+          <p class="usage-item"><span class="cross">✗</span>Usar sobre fondos fotografiados sin área limpia</p>
+          <p class="usage-item"><span class="cross">✗</span>Reemplazar Teal por otro verde</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
