@@ -178,6 +178,35 @@ imagenesRouter.post("/imagenes/:id/upscale", cargarImagenPropia, async (req, res
   res.status(202).json({ ok: true });
 });
 
+// El upscale corre en el navegador del cliente (UpscalerJS, ver
+// lib/upscaleCliente.js del frontend) — acá solo se guarda el resultado ya
+// calculado, sin Job ni cola de IA de por medio (a diferencia de
+// /imagenes/:id/upscale, que sí delega al worker/ai-service). Ver CONTEXTO.md
+// sobre por qué se movió del VPS al cliente.
+imagenesRouter.post(
+  "/imagenes/:id/upscale-cliente",
+  cargarImagenPropia,
+  upload.single("imagen"),
+  async (req, res) => {
+    if (req.imagen.estado_fondo !== "listo") {
+      return res.status(409).json({ error: "El quitado de fondo debe estar listo antes de hacer upscale" });
+    }
+    if (!req.file) return res.status(400).json({ error: "No se recibió la imagen" });
+    const metadata = await sharp(req.file.buffer).metadata();
+    const ruta_procesada = await guardar("procesadas", req.file.buffer, ".png");
+    const imagen = await prisma.imagen.update({
+      where: { id: req.imagen.id },
+      data: {
+        ruta_procesada,
+        estado_upscale: "listo",
+        ancho_px: metadata.width,
+        alto_px: metadata.height,
+      },
+    });
+    res.json(imagen);
+  }
+);
+
 imagenesRouter.delete("/imagenes/:id", cargarImagenPropia, async (req, res) => {
   await prisma.imagen.delete({ where: { id: req.imagen.id } });
   res.status(204).end();

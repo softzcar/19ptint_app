@@ -3,6 +3,11 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+# CyberPanel VPS sin GPU real (lavapipe/Vulkan por software): un upscale colgado
+# puede tardar tanto que satura la memoria/swap de toda la máquina. Cortarlo acá
+# para que falle limpio en vez de arrastrar al resto de los sitios del servidor.
+UPSCALE_TIMEOUT_S = 300
+
 from PIL import Image
 from rembg import remove, new_session
 
@@ -45,12 +50,18 @@ def upscale(imagen_bytes: bytes) -> bytes:
         salida = Path(tmp) / "out.png"
         Image.open(io.BytesIO(imagen_bytes)).convert("RGBA").save(entrada)
 
-        subprocess.run(
-            [str(REALESRGAN_BIN), "-i", str(entrada), "-o", str(salida), "-n", "realesrgan-x4plus"],
-            cwd=REALESRGAN_BIN.parent,
-            check=True,
-            capture_output=True,
-        )
+        try:
+            subprocess.run(
+                [str(REALESRGAN_BIN), "-i", str(entrada), "-o", str(salida), "-n", "realesrgan-x4plus"],
+                cwd=REALESRGAN_BIN.parent,
+                check=True,
+                capture_output=True,
+                timeout=UPSCALE_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                f"El upscale tardó más de {UPSCALE_TIMEOUT_S}s y se canceló (VPS sin GPU real)."
+            )
 
         im = Image.open(salida).convert("RGBA")
         # El binario escala fijo 4x; se reescala al factor configurado (2x

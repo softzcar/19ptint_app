@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../lib/api.js";
+import { navegadorCompatible, upscalearEnCliente } from "../lib/upscaleCliente.js";
 import GeneradorTexto from "../components/GeneradorTexto.vue";
 
 const props = defineProps({ id: { type: [String, Number], required: true } });
@@ -155,8 +156,23 @@ async function actualizarCopias(img) {
   await api.patch(`/imagenes/${img.id}`, { copias: Number(img.copias) || 1 });
 }
 
+const dispositivoCompatible = navegadorCompatible();
+const progresoUpscale = ref({});
+
 async function pedirUpscale(img) {
-  await api.post(`/imagenes/${img.id}/upscale`);
+  const url = previewUrls.value[img.id];
+  if (!url) return;
+  progresoUpscale.value = { ...progresoUpscale.value, [img.id]: 0 };
+  try {
+    await upscalearEnCliente(img.id, url, (rate) => {
+      progresoUpscale.value = { ...progresoUpscale.value, [img.id]: Math.round(rate * 100) };
+    });
+  } catch (e) {
+    error.value = "No se pudo aumentar la resolución: " + (e.message ?? e);
+  } finally {
+    const { [img.id]: _quitado, ...resto } = progresoUpscale.value;
+    progresoUpscale.value = resto;
+  }
   await cargar();
 }
 
@@ -344,14 +360,19 @@ onUnmounted(() => clearInterval(intervalo));
           </p>
 
           <div class="flex items-center justify-between text-xs pt-1 border-t border-black/5">
+            <span v-if="progresoUpscale[img.id] !== undefined" class="text-np-ink/40">
+              Aumentando resolución… {{ progresoUpscale[img.id] }}%
+            </span>
             <button
-              v-if="img.estado_fondo === 'listo' && img.estado_upscale !== 'procesando'"
+              v-else-if="img.estado_fondo === 'listo' && dispositivoCompatible"
               class="text-np-teal font-medium hover:text-np-teal-dark transition-colors"
               @click="pedirUpscale(img)"
             >
               {{ img.estado_upscale === "listo" ? "Upscale ✓ (repetir)" : "Aumentar resolución" }}
             </button>
-            <span v-else-if="img.estado_upscale === 'procesando'" class="text-np-ink/40">Upscale en proceso…</span>
+            <span v-else-if="img.estado_fondo === 'listo'" class="text-np-ink/40">
+              Su dispositivo no es compatible con esta aplicación
+            </span>
             <button class="text-red-600/70 hover:text-red-600 transition-colors" @click="eliminarImagen(img)">Eliminar</button>
           </div>
         </div>
