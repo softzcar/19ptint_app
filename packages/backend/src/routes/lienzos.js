@@ -203,5 +203,8 @@ lienzosRouter.get("/lienzos/:id/descargar", cargarLienzoPropio, async (req, res)
   const ext = "." + req.lienzo.ruta_export.split(".").pop();
   res.set("Content-Type", mimes[ext] ?? "application/octet-stream");
   res.set("Content-Disposition", `attachment; filename="lienzo-${req.lienzo.id}${ext}"`);
+  // Misma URL después de re-exportar (ruta_export cambia, la URL no) --
+  // evita que el caché de LiteSpeed/navegador entregue una exportación vieja.
+  res.set("Cache-Control", "no-store");
   res.send(buffer);
 });

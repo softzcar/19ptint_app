@@ -262,5 +262,9 @@ imagenesRouter.get("/imagenes/:id/archivo", cargarImagenPropia, async (req, res)
   const ruta = variante === "original" ? req.imagen.ruta_original : req.imagen.ruta_procesada;
   if (!ruta) return res.status(404).json({ error: "Archivo no disponible todavía" });
   const buffer = await leer(ruta);
-  res.set("Content-Type", "image/png").send(buffer);
+  // La URL no cambia aunque ruta_procesada sí (revertir/quitar fondo,
+  // upscale): sin esto, el caché de LiteSpeed (module cache del vhost, por
+  // tipo MIME) y el del propio navegador sirven la versión vieja por días
+  // aunque el archivo real ya haya cambiado.
+  res.set("Content-Type", "image/png").set("Cache-Control", "no-store").send(buffer);
 });
