@@ -17,13 +17,16 @@ export function crearApp() {
 
   app.get("/health", (req, res) => res.json({ ok: true }));
   app.use("/api/auth", authRouter);
+  // Va ANTES de los routers montados en "/api" a secas: esos aplican
+  // requireAuth (JWT de usuario) a todo lo que entre por ese prefijo, y
+  // cortarían el request del agente antes de que llegue acá. El agente usa
+  // su propio carril de auth por token de empresa.
+  app.use("/api/agente", agenteRouter);
   app.use("/api/proyectos", proyectosRouter);
   app.use("/api", imagenesRouter);
   app.use("/api", lienzosRouter);
   app.use("/api/admin", adminRouter);
   app.use("/api/ninesys", ninesysRouter);
-  // Agentes de escritorio: auth propia por token de empresa, no JWT de usuario.
-  app.use("/api/agente", agenteRouter);
 
   app.use((err, req, res, next) => {
     console.error(err);
