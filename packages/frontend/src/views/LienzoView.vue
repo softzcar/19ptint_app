@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { api } from "../lib/api.js";
 import { useImagenes, limiteAnchoUtilMm, validarParaAcomodar } from "../composables/useImagenes.js";
 import PedidoWhatsApp from "../components/PedidoWhatsApp.vue";
+import EstadoEntrega from "../components/EstadoEntrega.vue";
 import CargaImagenes from "../components/CargaImagenes.vue";
 import TarjetaImagen from "../components/TarjetaImagen.vue";
 
@@ -200,11 +201,33 @@ const hayProcesandoFondo = computed(() =>
   imgs.imagenes.value?.some((i) => i.estado_fondo === "pendiente" || i.estado_fondo === "procesando")
 );
 
+// La entrega a la PC de producción tarda de segundos a minutos (o más, si esa
+// PC está apagada), así que el estado se refresca solo mientras siga en curso.
+const entregaEnCurso = computed(
+  () => lienzo.value?.entrega && lienzo.value.entrega.estado !== "entregado"
+);
+
+// Solo vuelve a pedir la fila del lienzo: repetir cargar() rearmaría todo el
+// canvas de Konva (descarga cada imagen de nuevo) para actualizar un cartel.
+async function refrescarEntrega() {
+  try {
+    const { data } = await api.get(`/lienzos/${props.id}`);
+    lienzo.value.entrega = data.entrega;
+  } catch {
+    // Un fallo puntual de red no debe romper la vista: se reintenta al toque.
+  }
+}
+
+// Alimenta los "hace cuánto" de EstadoEntrega sin que dependa de un reloj propio.
+const ahora = ref(Date.now());
+
 let intervaloFondo = null;
 onMounted(() => {
   cargar();
   intervaloFondo = setInterval(() => {
+    ahora.value = Date.now();
     if (hayProcesandoFondo.value) imgs.cargar();
+    if (entregaEnCurso.value) refrescarEntrega();
   }, 3000);
 });
 onUnmounted(() => clearInterval(intervaloFondo));
@@ -342,6 +365,8 @@ onUnmounted(() => clearInterval(intervaloFondo));
         </v-layer>
       </v-stage>
     </div>
+
+    <EstadoEntrega :entrega="lienzo.entrega" :ahora="ahora" />
 
     <PedidoWhatsApp :lienzo="lienzo" />
   </div>

@@ -107,7 +107,22 @@ async function cargarLienzoPropio(req, res, next) {
   const id = Number(req.params.id);
   const lienzo = await prisma.lienzo.findFirst({
     where: { id, proyecto: req.rol === "admin" ? {} : { usuario_id: req.usuarioId } },
-    include: { items: true },
+    include: {
+      items: true,
+      // Estado de la entrega a la PC de producción. Se usa `select` explícito
+      // y NO un include del agente completo: esa fila tiene el token_hash y
+      // no debe salir nunca hacia el navegador.
+      entrega: {
+        select: {
+          estado: true,
+          intentos: true,
+          ultimo_error: true,
+          entregado_en: true,
+          purgado_en: true,
+          empresa_agente: { select: { nombre: true, ultimo_ping: true, activo: true } },
+        },
+      },
+    },
   });
   if (!lienzo) return res.status(404).json({ error: "Lienzo no encontrado" });
   req.lienzo = lienzo;
