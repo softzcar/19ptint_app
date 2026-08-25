@@ -34,6 +34,22 @@ function anchoProporcionalCm(img, altoCm) {
   return (altoCm * (img.ancho_px / img.alto_px)).toFixed(1);
 }
 
+// Alto inicial para precargar una imagen recién lista (nunca ajustada a
+// mano todavía): el tamaño real del archivo a 300dpi, o si su ancho real
+// supera lo que entra en el lienzo (ancho - margen configurados en
+// "Generar lienzo"), el alto que corresponde a capar el ancho EXACTO a esa
+// resta -- nunca se deforma, se reusa la misma proporción real del archivo.
+function altoInicialCm(img) {
+  if (!img.ancho_px || !img.alto_px) return null;
+  const dpi = img.dpi || 300;
+  const anchoOriginalCm = (img.ancho_px / dpi) * 2.54;
+  const limiteAnchoCm = (lienzoForm.value.ancho_mm - lienzoForm.value.margen_mm) / 10;
+  if (limiteAnchoCm > 0 && anchoOriginalCm > limiteAnchoCm) {
+    return limiteAnchoCm * (img.alto_px / img.ancho_px);
+  }
+  return (img.alto_px / dpi) * 2.54;
+}
+
 const ANCHOS_DTF = [
   { valor: 280, etiqueta: "28 cm" },
   { valor: 580, etiqueta: "58 cm" },
@@ -66,22 +82,37 @@ async function cargar() {
   }
 
   for (const img of data.imagenes) {
-    if (alturasInicializadas.has(img.id)) continue;
+    // Esperar a "listo": recién ahí ancho_px/alto_px reflejan el recorte
+    // final al bounding box (antes son los del archivo subido, sin quitar
+    // fondo) -- inicializar antes daría una precarga con el tamaño viejo.
+    if (img.estado_fondo !== "listo" || alturasInicializadas.has(img.id)) continue;
     alturasInicializadas.add(img.id);
-    if (img.alto_mm) alturasCm.value[img.id] = Number(img.alto_mm) / 10;
-    if (img.ancho_mm) anchosCm.value[img.id] = Number(img.ancho_mm) / 10;
     proporcionBloqueada.value[img.id] = true;
+
+    if (img.alto_mm) {
+      // Ya tiene tamaño guardado (precarga previa o ajuste manual del
+      // usuario en una carga anterior de la página) -- respetar tal cual.
+      alturasCm.value[img.id] = Number(img.alto_mm) / 10;
+      anchosCm.value[img.id] = Number(img.ancho_mm) / 10;
+    } else {
+      // Primera vez: precargar con el tamaño real del archivo (capado al
+      // ancho del lienzo si hace falta) y persistirlo.
+      const altoCm = altoInicialCm(img);
+      if (altoCm) {
+        alturasCm.value[img.id] = Number(altoCm.toFixed(1));
+        await actualizarAltura(img);
+      }
+    }
   }
 }
 
-async function subirArchivos(event) {
-  const archivos = event.target.files;
-  if (!archivos.length) return;
+async function subirArchivosDesde(fileList) {
+  if (!fileList?.length) return;
   subiendo.value = true;
   error.value = "";
   try {
     const form = new FormData();
-    for (const f of archivos) form.append("imagenes", f);
+    for (const f of fileList) form.append("imagenes", f);
     await api.post(`/proyectos/${props.id}/imagenes`, form, {
       headers: { "Content-Type": "multipart/form-data" },
     });
@@ -90,8 +121,22 @@ async function subirArchivos(event) {
     error.value = e.response?.data?.error ?? "Error al subir";
   } finally {
     subiendo.value = false;
-    event.target.value = "";
   }
+}
+
+function subirArchivos(event) {
+  subirArchivosDesde(event.target.files);
+  event.target.value = "";
+}
+
+// Sin preventDefault() en dragover/drop, el navegador ejecuta su acción por
+// defecto al soltar un archivo (navegar a él, se abre en pestaña nueva) en
+// vez de dispararle el evento a la app -- por eso hacía falta este handler.
+const arrastrandoArchivo = ref(false);
+function onDropArchivos(event) {
+  arrastrandoArchivo.value = false;
+  const archivos = Array.from(event.dataTransfer?.files ?? []).filter((f) => f.type.startsWith("image/"));
+  subirArchivosDesde(archivos);
 }
 
 async function buscarImagenesWeb() {
@@ -153,7 +198,9 @@ function toggleProporcion(img) {
 }
 
 async function actualizarCopias(img) {
-  await api.patch(`/imagenes/${img.id}`, { copias: Number(img.copias) || 1 });
+  // 0 es un valor legítimo (imagen todavía sin confirmar) -- "|| 1" lo
+  // pisaría porque 0 es falsy en JS.
+  await api.patch(`/imagenes/${img.id}`, { copias: Math.max(0, Number(img.copias) || 0) });
 }
 
 const dispositivoCompatible = navegadorCompatible();
@@ -248,7 +295,11 @@ onUnmounted(() => clearInterval(intervalo));
 
       <label
         v-if="modoCarga === 'subir'"
-        class="flex items-center justify-center gap-2 border-2 border-dashed border-np-teal/25 hover:border-np-teal/50 rounded-lg py-4 cursor-pointer transition-colors text-sm text-np-ink/60"
+        class="flex items-center justify-center gap-2 border-2 border-dashed rounded-lg py-4 cursor-pointer transition-colors text-sm text-np-ink/60"
+        :class="arrastrandoArchivo ? 'border-np-teal bg-np-teal-light/40' : 'border-np-teal/25 hover:border-np-teal/50'"
+        @dragover.prevent="arrastrandoArchivo = true"
+        @dragleave.prevent="arrastrandoArchivo = false"
+        @drop.prevent="onDropArchivos"
       >
         <span>{{ subiendo ? "Subiendo..." : "Elegir imágenes o arrastrarlas acá" }}</span>
         <input type="file" multiple accept="image/*" class="hidden" @change="subirArchivos" :disabled="subiendo" />
@@ -345,7 +396,7 @@ onUnmounted(() => clearInterval(intervalo));
               <input
                 v-model="img.copias"
                 type="number"
-                min="1"
+                min="0"
                 class="w-full border border-black/10 rounded-md px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-np-teal/40"
                 @change="actualizarCopias(img)"
               />

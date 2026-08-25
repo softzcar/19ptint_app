@@ -89,7 +89,10 @@ model Imagen {
   dpi              Int           @default(300)
   ancho_mm         Decimal?      @db.Decimal(8, 2)
   alto_mm          Decimal?      @db.Decimal(8, 2)
-  copias           Int           @default(1)
+  // Nace en 0 a propósito -- obliga al usuario a confirmar la cantidad
+  // real antes de que la imagen entre al acomodo (0 copias = el motor de
+  // empaquetado no genera ninguna pieza para ella, ver packing-engine).
+  copias           Int           @default(0)
   estado_fondo     EstadoProceso @default(pendiente)
   estado_upscale   EstadoProceso @default(omitido)
   created_at       DateTime      @default(now())
