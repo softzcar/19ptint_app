@@ -27,16 +27,34 @@ function validarConfigLienzo(tipo, ancho_mm, formato_exportacion) {
 }
 
 async function acomodarImagenesProyecto(proyectoId, { tipo, ancho_mm, margen_mm, imagenIds }) {
-  const where = {
-    proyecto_id: proyectoId,
-    estado_fondo: "listo",
-    ...(Array.isArray(imagenIds) && imagenIds.length ? { id: { in: imagenIds.map(Number) } } : {}),
-  };
-  const imagenes = await prisma.imagen.findMany({ where });
-  if (imagenes.length === 0) {
+  // Con ids explícitos (siempre el caso al re-acomodar desde LienzoView) no se
+  // filtra por estado_fondo todavía: hace falta distinguir "no está listo"
+  // (rechazar con error) de "no existe" -- filtrar de una no permite avisar,
+  // solo excluye en silencio al que todavía está procesando.
+  const idsExplicitos = Array.isArray(imagenIds) && imagenIds.length ? imagenIds.map(Number) : null;
+  const imagenes = await prisma.imagen.findMany({
+    where: {
+      proyecto_id: proyectoId,
+      ...(idsExplicitos ? { id: { in: idsExplicitos } } : { estado_fondo: "listo" }),
+    },
+  });
+
+  if (idsExplicitos) {
+    const noListas = imagenes.filter((i) => i.estado_fondo !== "listo");
+    if (noListas.length > 0) {
+      throw new Error(
+        `No se puede acomodar todavía: ${noListas
+          .map((i) => `${i.nombre_original ?? `#${i.id}`} (${i.estado_fondo})`)
+          .join(", ")}. Esperá a que termine o destildala.`
+      );
+    }
+  }
+
+  const listas = imagenes.filter((i) => i.estado_fondo === "listo");
+  if (listas.length === 0) {
     throw new Error("No hay imágenes listas (fondo quitado y con tamaño definido) para acomodar");
   }
-  return calcularAcomodo({ canvasAncho: Number(ancho_mm), tipo, margen: Number(margen_mm), imagenes });
+  return calcularAcomodo({ canvasAncho: Number(ancho_mm), tipo, margen: Number(margen_mm), imagenes: listas });
 }
 
 async function guardarColocaciones(tx, lienzoId, colocaciones) {
