@@ -94,6 +94,11 @@ model Imagen {
   // empaquetado no genera ninguna pieza para ella, ver packing-engine).
   copias           Int           @default(0)
   estado_fondo     EstadoProceso @default(pendiente)
+  // Preferencia del usuario, independiente de estado_fondo (que es el
+  // estado del PROCESO): true = se quitó/se va a quitar el fondo con IA,
+  // false = se revirtió a propósito y ruta_procesada apunta a ruta_original
+  // tal cual (ver POST /imagenes/:id/mantener-fondo).
+  quitar_fondo     Boolean       @default(true)
   estado_upscale   EstadoProceso @default(omitido)
   created_at       DateTime      @default(now())
   proyecto         Proyecto      @relation(fields: [proyecto_id], references: [id], onDelete: Cascade)

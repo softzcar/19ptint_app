@@ -76,7 +76,10 @@ export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
     // autenticado y se cachea como object URL en vez de usar <img src> directo.
     for (const img of data.imagenes) {
       if (img.estado_fondo !== "listo") continue;
-      const clave = `${img.id}:${img.estado_fondo}:${img.estado_upscale}`;
+      // quitar_fondo entra en la clave porque mantener-fondo/quitar-fondo
+      // pueden cambiar qué archivo apunta ruta_procesada sin tocar
+      // estado_fondo (se queda en "listo" en los dos casos).
+      const clave = `${img.id}:${img.estado_fondo}:${img.estado_upscale}:${img.quitar_fondo}`;
       if (previewCargados.has(clave)) continue;
       previewCargados.add(clave);
       const resp = await api.get(`/imagenes/${img.id}/archivo`, {
@@ -230,6 +233,37 @@ export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
     await cargar();
   }
 
+  // Switch "Quitar fondo" (reversible): mantenerFondo es instantáneo (no hay
+  // IA de por medio, solo vuelve a apuntar a la imagen original); quitarFondo
+  // vuelve a encolar el mismo job que corre automáticamente al subir.
+  const cambiandoFondo = ref({});
+
+  async function mantenerFondo(img) {
+    cambiandoFondo.value = { ...cambiandoFondo.value, [img.id]: true };
+    try {
+      await api.post(`/imagenes/${img.id}/mantener-fondo`);
+      await cargar();
+    } catch (e) {
+      error.value = e.response?.data?.error ?? "No se pudo mantener el fondo original";
+    } finally {
+      const { [img.id]: _quitado, ...resto } = cambiandoFondo.value;
+      cambiandoFondo.value = resto;
+    }
+  }
+
+  async function quitarFondo(img) {
+    cambiandoFondo.value = { ...cambiandoFondo.value, [img.id]: true };
+    try {
+      await api.post(`/imagenes/${img.id}/quitar-fondo`);
+      await cargar();
+    } catch (e) {
+      error.value = e.response?.data?.error ?? "No se pudo quitar el fondo";
+    } finally {
+      const { [img.id]: _quitado, ...resto } = cambiandoFondo.value;
+      cambiandoFondo.value = resto;
+    }
+  }
+
   return {
     imagenes,
     subiendo,
@@ -247,6 +281,7 @@ export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
     arrastrandoArchivo,
     dispositivoCompatible,
     progresoUpscale,
+    cambiandoFondo,
     anchoProporcionalCm,
     cargar,
     subirArchivosDesde,
@@ -260,6 +295,8 @@ export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
     actualizarCopias,
     pedirUpscale,
     eliminarImagen,
+    mantenerFondo,
+    quitarFondo,
   };
 }
 

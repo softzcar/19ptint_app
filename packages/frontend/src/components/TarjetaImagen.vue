@@ -92,5 +92,18 @@ const props = defineProps({
       </span>
       <button class="text-red-600/70 hover:text-red-600 transition-colors" @click="store.eliminarImagen(img)">Eliminar</button>
     </div>
+
+    <label class="flex items-center justify-between gap-2 text-xs text-np-ink/60 pt-1.5 border-t border-black/5">
+      <span>
+        {{ store.cambiandoFondo.value[img.id] ? "Actualizando…" : "Quitar fondo" }}
+      </span>
+      <input
+        type="checkbox"
+        class="accent-np-teal"
+        :checked="img.quitar_fondo"
+        :disabled="['pendiente', 'procesando'].includes(img.estado_fondo) || store.cambiandoFondo.value[img.id]"
+        @change="img.quitar_fondo ? store.mantenerFondo(img) : store.quitarFondo(img)"
+      />
+    </label>
   </div>
 </template>

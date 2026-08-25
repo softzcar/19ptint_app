@@ -87,6 +87,7 @@ imagenesRouter.post(
         ancho_px: metadata.width,
         alto_px: metadata.height,
         estado_fondo: "listo",
+        quitar_fondo: false, // ya nace transparente, no pasó por el quitado de fondo
       },
     });
     res.status(201).json(imagen);
@@ -161,6 +162,49 @@ imagenesRouter.patch("/imagenes/:id", cargarImagenPropia, async (req, res) => {
   if (copias !== undefined) data.copias = copias;
   const imagen = await prisma.imagen.update({ where: { id: req.imagen.id }, data });
   res.json(imagen);
+});
+
+// Revierte a la imagen original (con fondo) sin pasar por la IA: es
+// instantáneo, no hay job ni cola de por medio. ancho_px/alto_px se
+// recalculan desde el original porque el quitado de fondo los había
+// sobrescrito con las dimensiones recortadas al bounding box.
+imagenesRouter.post("/imagenes/:id/mantener-fondo", cargarImagenPropia, async (req, res) => {
+  if (["pendiente", "procesando"].includes(req.imagen.estado_fondo)) {
+    return res.status(409).json({ error: "Esperá a que termine de procesar antes de cambiar esta opción" });
+  }
+  const buffer = await leer(req.imagen.ruta_original);
+  const metadata = await sharp(buffer).metadata();
+  const imagen = await prisma.imagen.update({
+    where: { id: req.imagen.id },
+    data: {
+      ruta_procesada: req.imagen.ruta_original,
+      ancho_px: metadata.width,
+      alto_px: metadata.height,
+      estado_fondo: "listo",
+      quitar_fondo: false,
+    },
+  });
+  res.json(imagen);
+});
+
+// Vuelve a encolar el quitado de fondo real (ej. tras haber elegido
+// "mantener fondo" antes) -- mismo camino que al subir el archivo.
+imagenesRouter.post("/imagenes/:id/quitar-fondo", cargarImagenPropia, async (req, res) => {
+  if (["pendiente", "procesando"].includes(req.imagen.estado_fondo)) {
+    return res.status(409).json({ error: "Ya se está procesando" });
+  }
+  try {
+    await verificarLimiteDiario(req.imagen.proyecto.usuario_id);
+  } catch (err) {
+    return res.status(err.status ?? 400).json({ error: err.message });
+  }
+  await prisma.imagen.update({
+    where: { id: req.imagen.id },
+    data: { estado_fondo: "pendiente", quitar_fondo: true },
+  });
+  await prisma.job.create({ data: { imagen_id: req.imagen.id, tipo: "quitar_fondo" } });
+  await encolarJob(req.imagen.id, "quitar_fondo");
+  res.status(202).json({ ok: true });
 });
 
 imagenesRouter.post("/imagenes/:id/upscale", cargarImagenPropia, async (req, res) => {
