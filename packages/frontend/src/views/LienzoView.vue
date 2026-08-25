@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../lib/api.js";
 import { useImagenes, limiteAnchoUtilMm, validarParaAcomodar } from "../composables/useImagenes.js";
@@ -191,7 +191,23 @@ async function exportar() {
   }
 }
 
-onMounted(cargar);
+// Sin esto, una tarjeta se queda mostrando "Quitando fondo…" para siempre
+// una vez que termina el job -- nada vuelve a pedir el estado actual (a
+// diferencia de ProyectoDetalleView.vue, que sí refresca solo mientras algo
+// está procesando). Alcanza con refrescar imgs.cargar() (las tarjetas), no
+// hace falta repetir la carga pesada del canvas de Konva.
+const hayProcesandoFondo = computed(() =>
+  imgs.imagenes.value?.some((i) => i.estado_fondo === "pendiente" || i.estado_fondo === "procesando")
+);
+
+let intervaloFondo = null;
+onMounted(() => {
+  cargar();
+  intervaloFondo = setInterval(() => {
+    if (hayProcesandoFondo.value) imgs.cargar();
+  }, 3000);
+});
+onUnmounted(() => clearInterval(intervaloFondo));
 </script>
 
 <template>
