@@ -18,28 +18,29 @@ imagenesRouter.use(requireAuth);
 const MAX_LADO_PX = 4000;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
-// Crea la imagen y encola el quitado de fondo — comparte el mismo camino
-// tanto si el archivo viene de una subida manual como de la búsqueda web.
-async function crearImagenDesdeBuffer(proyectoId, usuarioId, buffer, nombreOriginal) {
-  await verificarLimiteDiario(usuarioId);
+// Crea la imagen tal cual se subió (con su fondo original, sin pasar por la
+// IA) -- comparte el mismo camino tanto si el archivo viene de una subida
+// manual como de la búsqueda web. El quitado de fondo ahora es opcional: se
+// dispara solo si el usuario prende el switch (POST /imagenes/:id/quitar-fondo).
+async function crearImagenDesdeBuffer(proyectoId, buffer, nombreOriginal) {
   const metadata = await sharp(buffer).metadata();
   if ((metadata.width ?? 0) > MAX_LADO_PX || (metadata.height ?? 0) > MAX_LADO_PX) {
     throw new Error(`${nombreOriginal}: excede el tamaño máximo de entrada (${MAX_LADO_PX}px por lado)`);
   }
   const ext = path.extname(nombreOriginal) || `.${metadata.format ?? "jpg"}`;
   const ruta_original = await guardar("originales", buffer, ext);
-  const imagen = await prisma.imagen.create({
+  return prisma.imagen.create({
     data: {
       proyecto_id: proyectoId,
       nombre_original: nombreOriginal,
       ruta_original,
+      ruta_procesada: ruta_original,
       ancho_px: metadata.width,
       alto_px: metadata.height,
+      estado_fondo: "listo",
+      quitar_fondo: false,
     },
   });
-  await prisma.job.create({ data: { imagen_id: imagen.id, tipo: "quitar_fondo" } });
-  await encolarJob(imagen.id, "quitar_fondo");
-  return imagen;
 }
 
 imagenesRouter.post(
@@ -54,7 +55,7 @@ imagenesRouter.post(
     const creadas = [];
     for (const file of req.files) {
       try {
-        creadas.push(await crearImagenDesdeBuffer(req.proyecto.id, req.proyecto.usuario_id, file.buffer, file.originalname));
+        creadas.push(await crearImagenDesdeBuffer(req.proyecto.id, file.buffer, file.originalname));
       } catch (err) {
         return res.status(err.status ?? 400).json({ error: err.message });
       }
@@ -134,7 +135,7 @@ imagenesRouter.post("/proyectos/:id/imagenes/desde-web", cargarProyecto, async (
   }
 
   try {
-    const imagen = await crearImagenDesdeBuffer(req.proyecto.id, req.proyecto.usuario_id, buffer, nombre || "imagen-web.jpg");
+    const imagen = await crearImagenDesdeBuffer(req.proyecto.id, buffer, nombre || "imagen-web.jpg");
     res.status(201).json(imagen);
   } catch (err) {
     res.status(err.status ?? 400).json({ error: err.message });
