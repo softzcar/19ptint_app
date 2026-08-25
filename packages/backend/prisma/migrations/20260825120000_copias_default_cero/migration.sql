@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `imagenes` MODIFY COLUMN `copias` INTEGER NOT NULL DEFAULT 0;

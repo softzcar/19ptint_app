@@ -1,0 +1,15 @@
+{
+  "name": "@19print/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "bullmq": "^5.21.2",
+    "dotenv": "^16.4.5",
+    "sharp": "^0.33.5"
+  }
+}

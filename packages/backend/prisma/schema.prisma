@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Rol {
+  admin
+  cliente
+}
+
+enum EstadoProceso {
+  pendiente
+  procesando
+  listo
+  error
+  omitido
+}
+
+enum TipoJob {
+  quitar_fondo
+  upscale
+}
+
+enum EstadoJob {
+  en_cola
+  procesando
+  listo
+  error
+}
+
+enum TipoLienzo {
+  dtf
+  sublimacion
+}
+
+enum FormatoExportacion {
+  png
+  pdf
+  jpeg
+}
+
+model Usuario {
+  id             Int        @id @default(autoincrement())
+  // Se usa tal cual como "nombre y apellido" — así lo pide también el
+  // agente de WhatsApp de Ninesys en un solo campo.
+  nombre         String     @db.VarChar(100)
+  email          String     @unique @db.VarChar(150)
+  password_hash  String     @db.VarChar(255)
+  rol            Rol        @default(cliente)
+  activo         Boolean    @default(true)
+  // null = sin límite. Cuenta quitar_fondo + upscale disparados hoy (CONTEXTO.md
+  // no lo pedía, pero es la métrica que más se relaciona con el costo real: CPU).
+  limite_diario  Int?
+  // Datos para el pedido por WhatsApp a Ninesys (ver §15 de CONTEXTO.md).
+  // Opcionales hasta que el cliente los completa en su perfil.
+  cedula         String?    @db.VarChar(20)
+  direccion      String?    @db.VarChar(255)
+  created_at     DateTime   @default(now())
+  proyectos      Proyecto[]
+
+  @@map("usuarios")
+}
+
+model Proyecto {
+  id         Int       @id @default(autoincrement())
+  usuario_id Int
+  nombre     String?   @db.VarChar(150)
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  usuario    Usuario   @relation(fields: [usuario_id], references: [id], onDelete: Cascade)
+  imagenes   Imagen[]
+  lienzos    Lienzo[]
+
+  @@map("proyectos")
+}
+
+model Imagen {
+  id               Int           @id @default(autoincrement())
+  proyecto_id      Int
+  nombre_original  String?       @db.VarChar(255)
+  ruta_original    String?       @db.VarChar(500)
+  ruta_procesada   String?       @db.VarChar(500)
+  ancho_px         Int?
+  alto_px          Int?
+  dpi              Int           @default(300)
+  ancho_mm         Decimal?      @db.Decimal(8, 2)
+  alto_mm          Decimal?      @db.Decimal(8, 2)
+  // Nace en 0 a propósito -- obliga al usuario a confirmar la cantidad
+  // real antes de que la imagen entre al acomodo (0 copias = el motor de
+  // empaquetado no genera ninguna pieza para ella, ver packing-engine).
+  copias           Int           @default(0)
+  estado_fondo     EstadoProceso @default(pendiente)
+  estado_upscale   EstadoProceso @default(omitido)
+  created_at       DateTime      @default(now())
+  proyecto         Proyecto      @relation(fields: [proyecto_id], references: [id], onDelete: Cascade)
+  jobs             Job[]
+  lienzo_items     LienzoItem[]
+
+  @@map("imagenes")
+}
+
+model Job {
+  id             Int       @id @default(autoincrement())
+  imagen_id      Int
+  tipo           TipoJob
+  estado         EstadoJob @default(en_cola)
+  mensaje_error  String?   @db.Text
+  creado_en      DateTime  @default(now())
+  iniciado_en    DateTime?
+  terminado_en   DateTime?
+  imagen         Imagen    @relation(fields: [imagen_id], references: [id], onDelete: Cascade)
+
+  @@map("jobs")
+}
+
+model Lienzo {
+  id                   Int                @id @default(autoincrement())
+  proyecto_id          Int
+  tipo                 TipoLienzo
+  ancho_mm             Decimal            @db.Decimal(8, 2)
+  margen_mm            Decimal            @default(5) @db.Decimal(6, 2)
+  alto_usado_mm        Decimal?           @db.Decimal(10, 2)
+  formato_exportacion  FormatoExportacion
+  ruta_export          String?            @db.VarChar(500)
+  created_at           DateTime           @default(now())
+  proyecto             Proyecto           @relation(fields: [proyecto_id], references: [id], onDelete: Cascade)
+  items                LienzoItem[]
+  // Presupuesto real creado en Ninesys al enviar el pedido por WhatsApp
+  // (CONTEXTO.md §15/§16) -- null hasta que se envía. Evita reenvíos
+  // duplicados y permite mostrar el estado en la UI del lienzo.
+  id_presupuesto_ninesys Int?
+  id_empresa_ninesys     Int?
+
+  @@map("lienzos")
+}
+
+model LienzoItem {
+  id         Int      @id @default(autoincrement())
+  lienzo_id  Int
+  imagen_id  Int
+  x_mm       Decimal? @db.Decimal(10, 2)
+  y_mm       Decimal? @db.Decimal(10, 2)
+  ancho_mm   Decimal? @db.Decimal(8, 2)
+  alto_mm    Decimal? @db.Decimal(8, 2)
+  rotacion   Int      @default(0) @db.SmallInt
+  orden      Int?
+  lienzo     Lienzo   @relation(fields: [lienzo_id], references: [id], onDelete: Cascade)
+  imagen     Imagen   @relation(fields: [imagen_id], references: [id], onDelete: Cascade)
+
+  @@map("lienzo_items")
+}

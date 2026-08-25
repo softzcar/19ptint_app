@@ -1,0 +1,25 @@
+{
+  "name": "19print-app",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/packing-engine",
+    "packages/backend",
+    "packages/worker",
+    "packages/frontend"
+  ],
+  "scripts": {
+    "test": "npm test --workspace packages/packing-engine",
+    "dev": "bash scripts/dev.sh"
+  },
+  "allowScripts": {
+    "@prisma/client@5.22.0": true,
+    "@prisma/engines@5.22.0": true,
+    "esbuild@0.21.5": true,
+    "fsevents@2.3.3": true,
+    "msgpackr-extract@3.0.4": true,
+    "prisma@5.22.0": true,
+    "sharp@0.33.5": true,
+    "vue-demi@0.14.10": true
+  }
+}

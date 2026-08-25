@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE `jobs` ADD COLUMN `creado_en` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3);
+
+-- AlterTable
+ALTER TABLE `usuarios` ADD COLUMN `activo` BOOLEAN NOT NULL DEFAULT true,
+    ADD COLUMN `limite_diario` INTEGER NULL;
