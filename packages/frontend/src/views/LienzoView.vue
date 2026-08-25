@@ -2,13 +2,15 @@
 import { ref, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../lib/api.js";
+import { useImagenes } from "../composables/useImagenes.js";
 import PedidoWhatsApp from "../components/PedidoWhatsApp.vue";
+import CargaImagenes from "../components/CargaImagenes.vue";
+import TarjetaImagen from "../components/TarjetaImagen.vue";
 
 const props = defineProps({ id: { type: [String, Number], required: true } });
 const router = useRouter();
 
 const lienzo = ref(null);
-const proyecto = ref(null);
 const imagenesPorId = ref({});
 const imagenesCargadas = ref({});
 const exportando = ref(false);
@@ -23,8 +25,13 @@ const regenerando = ref(false);
 const editForm = ref({ tipo: "dtf", ancho_mm: 280, margen_mm: 5, formato_exportacion: "png" });
 const imagenesSeleccionadas = ref({});
 
+// proyectoId se conoce recién tras el primer GET /lienzos/:id -- se le pasa
+// al composable como ref (unref-eado adentro) para no bloquear su creación.
+const proyectoIdRef = ref(null);
+const imgs = useImagenes(proyectoIdRef, () => editForm.value.ancho_mm - editForm.value.margen_mm);
+
 const imagenesElegibles = computed(
-  () => proyecto.value?.imagenes.filter((i) => i.estado_fondo === "listo" && i.ancho_mm && i.alto_mm) ?? []
+  () => imgs.imagenes.value?.filter((i) => i.estado_fondo === "listo" && i.ancho_mm && i.alto_mm) ?? []
 );
 
 function abrirEdicion() {
@@ -112,9 +119,13 @@ const piezasRender = ref([]);
 async function cargar() {
   const { data } = await api.get(`/lienzos/${props.id}`);
   lienzo.value = data;
+  proyectoIdRef.value = data.proyecto_id;
 
-  const { data: proyectoData } = await api.get(`/proyectos/${data.proyecto_id}`);
-  proyecto.value = proyectoData;
+  // imgs.cargar() trae el proyecto completo (todas sus imágenes, con
+  // preview autenticado y controles de alto/ancho/copias ya inicializados)
+  // -- lo mismo que usa ProyectoDetalleView.vue, así el panel "Editar /
+  // re-acomodar" muestra exactamente lo mismo que al cargar por primera vez.
+  await imgs.cargar();
 
   const idsUnicos = [...new Set(data.items.map((i) => i.imagen_id))];
   const entradas = await Promise.all(
@@ -243,14 +254,29 @@ onMounted(cargar);
       </div>
 
       <div>
-        <p class="text-sm font-medium text-np-ink/70 mb-1.5">Imágenes a incluir</p>
-        <div class="grid sm:grid-cols-3 gap-2 text-sm max-h-48 overflow-auto">
-          <label v-for="img in imagenesElegibles" :key="img.id" class="flex items-center gap-2 text-np-ink/70">
-            <input type="checkbox" class="accent-np-teal" v-model="imagenesSeleccionadas[img.id]" />
-            {{ img.nombre_original }} ({{ img.copias }}x)
-          </label>
+        <p class="text-sm font-medium text-np-ink/70 mb-1.5">Agregar imágenes nuevas</p>
+        <CargaImagenes :proyecto-id="proyectoIdRef" :store="imgs" />
+      </div>
+
+      <div>
+        <p class="text-sm font-medium text-np-ink/70 mb-1.5">
+          Imágenes del proyecto — marcá cuáles incluir en este lienzo
+        </p>
+        <div class="grid sm:grid-cols-3 gap-3 max-h-[32rem] overflow-auto pr-1">
+          <TarjetaImagen v-for="img in imgs.imagenes.value" :key="img.id" :img="img" :store="imgs">
+            <template #antes-nombre="{ img: imgSlot }">
+              <label
+                v-if="imgSlot.estado_fondo === 'listo' && imgSlot.ancho_mm && imgSlot.alto_mm"
+                class="flex items-center gap-1.5 text-xs font-semibold text-np-teal"
+              >
+                <input type="checkbox" class="accent-np-teal" v-model="imagenesSeleccionadas[imgSlot.id]" />
+                Incluir en este lienzo
+              </label>
+              <p v-else class="text-xs text-np-ink/40">Aún no está lista para incluirse.</p>
+            </template>
+          </TarjetaImagen>
         </div>
-        <p v-if="!imagenesElegibles.length" class="text-xs text-np-ink/40">No hay imágenes listas en este proyecto.</p>
+        <p v-if="!imgs.imagenes.value?.length" class="text-xs text-np-ink/40">No hay imágenes en este proyecto.</p>
       </div>
 
       <div class="flex gap-2">
