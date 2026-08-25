@@ -317,9 +317,18 @@ export function validarParaAcomodar(imagenes, anchoLienzoMm, margenMm) {
   const limite = limiteAnchoUtilMm(anchoLienzoMm, margenMm);
   const errores = [];
   for (const img of imagenes) {
-    if (img.estado_fondo !== "listo") continue; // aún procesando, no es un dato que falte cargar
-
     const nombre = img.nombre_original ?? `#${img.id}`;
+
+    // Una imagen puede quedar seleccionada (checkbox marcado en
+    // LienzoView) y recién después el usuario prende el switch "Quitar
+    // fondo" sobre ella -- la selección sigue en true aunque el checkbox ya
+    // no se vea, así que sin este chequeo el acomodo la ignoraría en
+    // silencio (el backend solo empaqueta estado_fondo=listo).
+    if (img.estado_fondo === "pendiente" || img.estado_fondo === "procesando") {
+      errores.push(`${nombre}: se está quitando el fondo, esperá a que termine antes de acomodar.`);
+      continue;
+    }
+    if (img.estado_fondo !== "listo") continue; // error u otro estado: se excluye en silencio, sin cambios
     if (!img.ancho_mm || !img.alto_mm) {
       errores.push(`${nombre}: falta definir el ancho y el alto.`);
       continue;
