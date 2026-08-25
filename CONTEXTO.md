@@ -2,7 +2,7 @@
 
 > Este documento se actualiza a medida que el proyecto avanza. Refleja el
 > estado real de lo construido, no solo el plan original. Última
-> actualización: 2026-08-23.
+> actualización: 2026-08-25.
 
 ## 1. Qué es la app
 
@@ -92,9 +92,16 @@ packages/
 
 - **Quitado de fondo**: `rembg` con modelo `u2netp` — validado end-to-end,
   incluye recorte automático al bounding box real por canal alfa.
-- **Upscale**: `realesrgan-ncnn-vulkan` (modelo `realesrgan-x4plus`,
-  reescalado a 2x configurable vía `UPSCALE_SCALE`) — validado, ~2.5s por
-  imagen en Mac (GPU vía Metal), más lento en CPU pura en el VPS.
+- **Upscale**: corre **en el navegador del cliente**, no en el servidor
+  (`packages/frontend/src/lib/upscaleCliente.js`, librería `UpscalerJS` +
+  `@upscalerjs/default-model`, 2x, con backend WebGPU si está disponible o
+  WebGL si no). Requiere `patchSize`/`padding` al llamar `upscaler.upscale()`
+  — sin eso, cualquier foto real (no un ícono chico) revienta el límite de
+  textura de WebGL. El endpoint viejo server-side
+  (`realesrgan-ncnn-vulkan`/`UPSCALE_SCALE`, en `packages/ai-service` y
+  `POST /imagenes/:id/upscale`) sigue en el código con timeout de 300s, pero
+  ya no lo llama el frontend — ver §14 sobre el incidente que motivó el
+  cambio.
 - Tamaño máximo de imagen de entrada: **4000px por lado** (`MAX_LADO_PX`),
   aplicado tanto al subir archivo como al traer imágenes del buscador (se
   eligió el tamaño `large2x` de Pexels, ~1880px, para no chocar con este
@@ -313,6 +320,54 @@ Con esto, **Ninesys es quien crea y hace aprobar el presupuesto** — ya no
 hace falta construir esa lógica de aprobación dentro de esta app (se
 elimina ese punto del roadmap anterior).
 
+## 11-bis. Entrega de lienzos a la PC de producción (implementado 2026-08-25)
+
+Los exports son pesados (49MB medidos en un DTF real de 28cm; el alto no
+tiene tope, así que puede ser mucho más) y antes se quedaban en el VPS hasta
+que alguien los bajaba a mano justo al momento de imprimir. Ahora viajan
+solos a la PC de producción de cada empresa.
+
+**El tráfico va al revés de lo intuitivo: la PC llama al servidor, nunca el
+servidor a la PC.** Se descartó la idea de exponer una carpeta compartida
+("NAS casero") porque exige una conexión entrante: sin IP fija ya es
+complicado, y con CGNAT (varios clientes compartiendo una IP pública, común
+en Venezuela) abrir puertos es imposible — además de que exponer SMB a
+internet es el vector principal de ransomware. Con conexiones salientes no
+hace falta IP fija, ni tocar el router, ni exponer nada.
+
+- **`empresa_agentes`**: un token por empresa, guardado como sha256 (nunca en
+  claro). El agente solo conoce su token; el backend lo resuelve a
+  `id_empresa_ninesys` y de ahí en adelante todo filtra por ese ID, igual que
+  el resto del backend. Vive en la base propia de esta app y **no** en
+  `empresas` de `api_empresas`: esa tabla guarda credenciales que ninesys-api
+  usa hacia *afuera* (`ws_token`/`ws_username` son del servicio de WhatsApp,
+  ver `ninesys-api/app/lib/whatsapp.php`), y ésta va en la dirección
+  contraria. Quien valida una credencial es quien la guarda.
+- **`entregas_lienzo`**: la cola por empresa. Se crea al confirmar el pedido
+  (`routes/ninesys.js`), que es el momento en que recién se sabe quién
+  imprime — antes de eso `id_empresa_ninesys` es null. Si la PC está apagada
+  la cola se acumula sola.
+- **`/api/agente`**: carril de auth propio (token, no JWT de usuario), con
+  soporte de `Range` para reanudar cortes y verificación sha256 en ambas
+  puntas. Se monta **antes** que los routers de `/api` a secas, que aplican
+  `requireAuth` a nivel de router y lo interceptarían.
+- **Render sin bloquear el pedido**: si el lienzo no tiene export al
+  confirmarse, se encola en BullMQ (`encolarExportLienzo`) en vez de
+  generarlo dentro del request, que timeoutearía.
+- **Retención**: `scripts/limpiar-storage.js` por cron diario (3:15 AM) purga
+  los exports entregados hace más de 7 días y barre huérfanos. Borrar no
+  pierde nada: el lienzo se regenera desde el diseño.
+
+**Fugas de storage tapadas de paso** (antes nada se borraba nunca): cada
+re-exportación, cada re-acomodo y cada lienzo eliminado dejaban un archivo
+huérfano de 19-49MB. Ver `storage.borrar()` y su uso en `routes/lienzos.js`.
+
+El agente de escritorio (Electron, bandeja de Windows) vive en
+`packages/agente/` — ver su README. Está **fuera de los workspaces npm** a
+propósito: no comparte código con el backend y se instala en PCs con Windows,
+así que incluirlo haría que cada `npm install` del VPS bajara Electron
+(~230MB) al pedo.
+
 ## 12. Consideraciones de color
 
 - DTF: RGB (consistente con cómo trabaja el RIP de la impresora DTF)
@@ -340,6 +395,19 @@ npm test               # motor de acomodo (vitest)
 - Storage: disco local del VPS vs. Backblaze B2/Wasabi (si el volumen lo justifica).
 - Perfil de color ICC a embeber en el PDF de sublimación.
 - Concurrencia exacta de la cola de jobs (`WORKER_CONCURRENCY`, ajustar según núcleos reales del VPS).
+- **Resuelto — upscale movido al cliente.** Incidente en producción
+  (2026-08-24, VPS `dtf.nineteencustom.com`): una foto de prueba de 368×1020px
+  tardó 30+ minutos en `realesrgan-ncnn-vulkan` sobre Vulkan por software
+  (lavapipe) y saturó el swap del VPS (2GB), dejando todo el servidor
+  compartido sin responder (afectó también a otros sitios del mismo VPS).
+  Mitigación inmediata: timeout de 300s al subprocess y
+  `WORKER_CONCURRENCY=1`. Solución de fondo (implementada el mismo día):
+  el upscale se movió 100% al navegador del cliente (ver §5) — validado en
+  producción con una foto real (503×565 → 1006×1130 en el propio Chrome del
+  usuario, sin tocar CPU/memoria del VPS). Si algún dispositivo no soporta
+  WebGL/WebGPU, el botón queda deshabilitado con el mensaje "Su dispositivo
+  no es compatible con esta aplicación" — no hay fallback al server para no
+  reabrir el mismo riesgo.
 
 ## 15. Roadmap futuro (no implementado aún)
 
