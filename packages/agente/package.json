@@ -1,0 +1,32 @@
+{
+  "name": "19print-agente",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Baja automáticamente los lienzos de 19print a la PC de producción de la empresa",
+  "main": "src/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron .",
+    "build": "electron-builder --win",
+    "build:dir": "electron-builder --win --dir"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.nineteencustom.19print.agente",
+    "productName": "19print Agente",
+    "files": ["src/**/*", "recursos/**/*"],
+    "win": {
+      "target": "nsis",
+      "icon": "recursos/icono.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "19print Agente"
+    }
+  }
+}

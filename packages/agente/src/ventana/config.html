@@ -1,0 +1,142 @@
+<meta charset="utf-8" />
+<title>19print Agente — Configuración</title>
+<style>
+  :root {
+    --teal: #17a08b;
+    --teal-dark: #12806f;
+    --ink: #2b2b2b;
+    --paper: #f5f5f2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
+    color: var(--ink);
+    background: #fff;
+    margin: 0;
+    padding: 24px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: #777; font-size: 12px; margin: 0 0 20px; }
+  label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: 600; }
+  input[type="text"] {
+    width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px;
+    font-size: 13px; font-family: inherit;
+  }
+  input[type="text"]:focus { outline: 2px solid rgba(23,160,139,.35); border-color: var(--teal); }
+  .campo { margin-bottom: 16px; }
+  .fila { display: flex; gap: 8px; }
+  .fila input { flex: 1; }
+  button {
+    background: var(--teal); color: #fff; border: 0; border-radius: 6px;
+    padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover { background: var(--teal-dark); }
+  button.sec { background: #fff; color: var(--ink); border: 1px solid #ddd; font-weight: 500; }
+  button:disabled { opacity: .5; cursor: default; }
+  .aviso { padding: 10px 12px; border-radius: 6px; font-size: 12.5px; margin-bottom: 16px; }
+  .ok { background: #e6f6f2; color: var(--teal-dark); }
+  .mal { background: #fdecec; color: #b3261e; }
+  .pie { display: flex; gap: 8px; align-items: center; margin-top: 22px; }
+  .check { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #555; }
+  code { background: var(--paper); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+
+<h1>Configuración del agente</h1>
+<p class="sub">
+  Este programa baja solo los lienzos a esta PC apenas se confirma un pedido. Versión <span id="version"></span>
+</p>
+
+<div id="aviso" class="aviso" hidden></div>
+
+<div class="campo">
+  <label for="token">Token de la empresa</label>
+  <input type="text" id="token" placeholder="19p_..." spellcheck="false" />
+  <p class="sub" style="margin: 6px 0 0">
+    Se genera en el panel web, en <code>Agentes</code>. Es lo único que hace falta: con el token el agente ya sabe
+    a qué empresa pertenece.
+  </p>
+</div>
+
+<div class="campo">
+  <label for="carpeta">Carpeta donde guardar los lienzos</label>
+  <div class="fila">
+    <input type="text" id="carpeta" spellcheck="false" />
+    <button class="sec" id="btnCarpeta">Elegir...</button>
+  </div>
+</div>
+
+<div class="campo">
+  <label for="servidor">Servidor</label>
+  <input type="text" id="servidor" spellcheck="false" />
+</div>
+
+<label class="check">
+  <input type="checkbox" id="arranque" />
+  Arrancar junto con Windows
+</label>
+
+<div class="pie">
+  <button id="btnGuardar">Guardar</button>
+  <button class="sec" id="btnProbar">Probar conexión</button>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function avisar(texto, ok) {
+    const el = $("aviso");
+    el.textContent = texto;
+    el.className = "aviso " + (ok ? "ok" : "mal");
+    el.hidden = false;
+  }
+
+  function valores() {
+    return {
+      token: $("token").value.trim(),
+      carpetaDestino: $("carpeta").value.trim(),
+      servidorUrl: $("servidor").value.trim().replace(/\/+$/, ""),
+      arrancaConWindows: $("arranque").checked,
+    };
+  }
+
+  async function cargar() {
+    const c = await window.agente.leer();
+    $("token").value = c.token ?? "";
+    $("carpeta").value = c.carpetaDestino ?? "";
+    $("servidor").value = c.servidorUrl ?? "";
+    $("arranque").checked = Boolean(c.arrancaConWindows);
+    $("version").textContent = c.version ?? "";
+  }
+
+  $("btnCarpeta").onclick = async () => {
+    const elegida = await window.agente.elegirCarpeta();
+    if (elegida) $("carpeta").value = elegida;
+  };
+
+  $("btnProbar").onclick = async () => {
+    const v = valores();
+    if (!v.token) return avisar("Falta el token.", false);
+    $("btnProbar").disabled = true;
+    const r = await window.agente.probar(v);
+    $("btnProbar").disabled = false;
+    avisar(r.ok ? `Conectado correctamente a: ${r.empresa}` : `No se pudo conectar: ${r.error}`, r.ok);
+  };
+
+  $("btnGuardar").onclick = async () => {
+    const v = valores();
+    if (!v.token) return avisar("Falta el token.", false);
+    if (!v.carpetaDestino) return avisar("Elegí la carpeta donde guardar los lienzos.", false);
+    $("btnGuardar").disabled = true;
+    const r = await window.agente.guardar(v);
+    $("btnGuardar").disabled = false;
+    avisar(
+      r.ok
+        ? `Guardado. Conectado a ${r.empresa}. Ya podés cerrar esta ventana: el agente queda corriendo junto al reloj.`
+        : `Guardado, pero no se pudo conectar: ${r.error}`,
+      r.ok
+    );
+  };
+
+  cargar();
+</script>
