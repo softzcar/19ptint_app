@@ -22,6 +22,9 @@ function salir() {
         <router-link v-if="auth.usuario?.rol === 'admin'" :to="{ name: 'admin-usuarios' }" class="hover:text-np-amber transition-colors">
           Usuarios
         </router-link>
+        <router-link v-if="auth.usuario?.rol === 'admin'" :to="{ name: 'admin-agentes' }" class="hover:text-np-amber transition-colors">
+          Agentes
+        </router-link>
         <router-link :to="{ name: 'perfil' }" class="hover:text-np-amber transition-colors">{{ auth.usuario?.nombre }}</router-link>
         <button class="text-white hover:text-np-amber transition-colors" @click="salir">Salir</button>
       </div>
