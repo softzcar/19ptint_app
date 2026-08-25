@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../lib/api.js";
-import { useImagenes } from "../composables/useImagenes.js";
+import { useImagenes, limiteAnchoUtilMm, validarParaAcomodar } from "../composables/useImagenes.js";
 import PedidoWhatsApp from "../components/PedidoWhatsApp.vue";
 import CargaImagenes from "../components/CargaImagenes.vue";
 import TarjetaImagen from "../components/TarjetaImagen.vue";
@@ -28,10 +28,16 @@ const imagenesSeleccionadas = ref({});
 // proyectoId se conoce recién tras el primer GET /lienzos/:id -- se le pasa
 // al composable como ref (unref-eado adentro) para no bloquear su creación.
 const proyectoIdRef = ref(null);
-const imgs = useImagenes(proyectoIdRef, () => editForm.value.ancho_mm - editForm.value.margen_mm);
+const imgs = useImagenes(proyectoIdRef, () => limiteAnchoUtilMm(editForm.value.ancho_mm, editForm.value.margen_mm));
 
 const imagenesElegibles = computed(
   () => imgs.imagenes.value?.filter((i) => i.estado_fondo === "listo" && i.ancho_mm && i.alto_mm) ?? []
+);
+const imagenesParaAcomodar = computed(() =>
+  (imgs.imagenes.value ?? []).filter((i) => imagenesSeleccionadas.value[i.id])
+);
+const erroresGeneracion = computed(() =>
+  validarParaAcomodar(imagenesParaAcomodar.value, editForm.value.ancho_mm, editForm.value.margen_mm)
 );
 
 function abrirEdicion() {
@@ -282,7 +288,7 @@ onMounted(cargar);
       <div class="flex gap-2">
         <button
           class="bg-np-teal hover:bg-np-teal-dark text-white font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
-          :disabled="regenerando"
+          :disabled="regenerando || erroresGeneracion.length > 0"
           @click="regenerar"
         >
           {{ regenerando ? "Re-acomodando..." : "Volver a acomodar" }}
@@ -291,6 +297,9 @@ onMounted(cargar);
           Cancelar
         </button>
       </div>
+      <ul v-if="erroresGeneracion.length" class="text-xs text-red-600 space-y-0.5 list-disc pl-4">
+        <li v-for="(msg, i) in erroresGeneracion" :key="i">{{ msg }}</li>
+      </ul>
     </section>
 
     <div class="bg-white rounded-xl border border-black/5 shadow-sm p-2 overflow-auto">

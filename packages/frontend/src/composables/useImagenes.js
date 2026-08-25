@@ -17,9 +17,10 @@ import { navegadorCompatible, upscalearEnCliente } from "../lib/upscaleCliente.j
  *   plano o reactivo (útil cuando el id se conoce recién después de una
  *   carga async, ej. al editar un lienzo ya generado).
  * @param {() => number} obtenerAnchoLimiteMm - ancho disponible actual
- *   (ancho del lienzo - margen) usado solo para precargar el alto inicial de
- *   una imagen recién subida que nunca tuvo alto_mm guardado (capa el alto
- *   inicial para que el ancho proporcional no exceda el lienzo objetivo).
+ *   (ancho del lienzo - margen a cada lado, ver limiteAnchoUtilMm) usado solo
+ *   para precargar el alto inicial de una imagen recién subida que nunca tuvo
+ *   alto_mm guardado (capa el alto inicial para que el ancho proporcional no
+ *   exceda el lienzo objetivo).
  */
 export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
   const imagenes = ref([]);
@@ -260,4 +261,40 @@ export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
     pedirUpscale,
     eliminarImagen,
   };
+}
+
+// El margen del lienzo se aplica a cada lado (ej. 5mm de margen = 5mm a la
+// izquierda + 5mm a la derecha), por eso se resta *2 y no una sola vez.
+export function limiteAnchoUtilMm(anchoLienzoMm, margenMm) {
+  return Number(anchoLienzoMm) - Number(margenMm) * 2;
+}
+
+/**
+ * Chequeo previo a "Auto-acomodar"/"Volver a acomodar": una imagen con fondo
+ * listo pero sin ancho/alto, sin copias (nace en 0 a propósito, ver
+ * schema.prisma) o más ancha que lo que entra en el lienzo quedaría
+ * silenciosamente afuera del acomodo (o el backend la rechazaría con un
+ * error genérico) -- mejor avisar antes, imagen por imagen.
+ */
+export function validarParaAcomodar(imagenes, anchoLienzoMm, margenMm) {
+  const limite = limiteAnchoUtilMm(anchoLienzoMm, margenMm);
+  const errores = [];
+  for (const img of imagenes) {
+    if (img.estado_fondo !== "listo") continue; // aún procesando, no es un dato que falte cargar
+
+    const nombre = img.nombre_original ?? `#${img.id}`;
+    if (!img.ancho_mm || !img.alto_mm) {
+      errores.push(`${nombre}: falta definir el ancho y el alto.`);
+      continue;
+    }
+    if (!Number(img.copias)) {
+      errores.push(`${nombre}: indicá la cantidad de copias (no puede quedar en 0).`);
+    }
+    if (Number(img.ancho_mm) > limite) {
+      errores.push(
+        `${nombre}: el ancho (${(Number(img.ancho_mm) / 10).toFixed(1)}cm) supera el ancho disponible del lienzo (${(limite / 10).toFixed(1)}cm, con ${margenMm}mm de margen a cada lado).`
+      );
+    }
+  }
+  return errores;
 }

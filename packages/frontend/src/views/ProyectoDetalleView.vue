@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../lib/api.js";
-import { useImagenes } from "../composables/useImagenes.js";
+import { useImagenes, limiteAnchoUtilMm, validarParaAcomodar } from "../composables/useImagenes.js";
 import CargaImagenes from "../components/CargaImagenes.vue";
 import TarjetaImagen from "../components/TarjetaImagen.vue";
 
@@ -18,13 +18,16 @@ const ANCHOS_DTF = [
 ];
 const lienzoForm = ref({ tipo: "dtf", ancho_mm: 280, margen_mm: 5, formato_exportacion: "png" });
 
-const imgs = useImagenes(props.id, () => lienzoForm.value.ancho_mm - lienzoForm.value.margen_mm);
+const imgs = useImagenes(props.id, () => limiteAnchoUtilMm(lienzoForm.value.ancho_mm, lienzoForm.value.margen_mm));
 
 const imagenesListas = computed(
   () => proyecto.value?.imagenes.filter((i) => i.estado_fondo === "listo" && i.ancho_mm && i.alto_mm) ?? []
 );
 const hayProcesando = computed(() =>
   proyecto.value?.imagenes.some((i) => i.estado_fondo === "pendiente" || i.estado_fondo === "procesando" || i.estado_upscale === "procesando")
+);
+const erroresGeneracion = computed(() =>
+  validarParaAcomodar(proyecto.value?.imagenes ?? [], lienzoForm.value.ancho_mm, lienzoForm.value.margen_mm)
 );
 
 async function cargar() {
@@ -131,13 +134,16 @@ onUnmounted(() => clearInterval(intervalo));
       <div class="flex items-center gap-4">
         <button
           class="bg-np-teal hover:bg-np-teal-dark text-white font-bold text-sm uppercase tracking-wide px-5 py-2.5 rounded-lg transition-colors disabled:opacity-40 disabled:hover:bg-np-teal"
-          :disabled="!imagenesListas.length"
+          :disabled="!imagenesListas.length || erroresGeneracion.length > 0"
           @click="generarLienzo"
         >
           Auto-acomodar
         </button>
         <p class="text-xs text-np-ink/40">{{ imagenesListas.length }} imagen(es) lista(s) para acomodar.</p>
       </div>
+      <ul v-if="erroresGeneracion.length" class="text-xs text-red-600 space-y-0.5 list-disc pl-4">
+        <li v-for="(msg, i) in erroresGeneracion" :key="i">{{ msg }}</li>
+      </ul>
     </section>
 
     <section v-if="proyecto.lienzos.length" class="bg-white rounded-xl border border-black/5 shadow-sm p-5 sm:p-6 space-y-3">
