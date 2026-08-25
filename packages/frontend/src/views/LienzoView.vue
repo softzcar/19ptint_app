@@ -284,7 +284,7 @@ onUnmounted(() => clearInterval(intervaloFondo));
         <p class="text-sm font-medium text-np-ink/70 mb-1.5">
           Imágenes del proyecto — marcá cuáles incluir en este lienzo
         </p>
-        <div class="grid sm:grid-cols-3 gap-3 max-h-[32rem] overflow-auto pr-1">
+        <div class="grid sm:grid-cols-3 gap-3">
           <TarjetaImagen v-for="img in imgs.imagenes.value" :key="img.id" :img="img" :store="imgs">
             <template #antes-nombre="{ img: imgSlot }">
               <label
