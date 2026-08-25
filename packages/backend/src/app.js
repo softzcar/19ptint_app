@@ -7,6 +7,7 @@ import { imagenesRouter } from "./routes/imagenes.js";
 import { lienzosRouter } from "./routes/lienzos.js";
 import { adminRouter } from "./routes/admin.js";
 import { ninesysRouter } from "./routes/ninesys.js";
+import { agenteRouter } from "./routes/agente.js";
 
 export function crearApp() {
   const app = express();
@@ -21,6 +22,8 @@ export function crearApp() {
   app.use("/api", lienzosRouter);
   app.use("/api/admin", adminRouter);
   app.use("/api/ninesys", ninesysRouter);
+  // Agentes de escritorio: auth propia por token de empresa, no JWT de usuario.
+  app.use("/api/agente", agenteRouter);
 
   app.use((err, req, res, next) => {
     console.error(err);

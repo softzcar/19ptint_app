@@ -3,6 +3,7 @@ import { Worker } from "bullmq";
 import sharp from "sharp";
 import { prisma } from "../../backend/src/db.js";
 import { guardar, leer } from "../../backend/src/lib/storage.js";
+import { exportarLienzo } from "../../backend/src/lib/exportarLienzo.js";
 
 // Debe coincidir con NOMBRE_COLA en packages/backend/src/lib/queue.js
 const NOMBRE_COLA = "procesamiento-imagenes";
@@ -59,6 +60,16 @@ const worker = new Worker(
   NOMBRE_COLA,
   async (job) => {
     const { imagenId, tipo } = job.data;
+
+    // El render del export no es un job de imagen: no tiene imagen_id ni fila
+    // en la tabla `jobs` (su seguimiento vive en entregas_lienzo), así que se
+    // atiende antes de la lógica común de más abajo.
+    if (tipo === "exportar_lienzo") {
+      const { ruta_export, bytes } = await exportarLienzo(job.data.lienzoId);
+      console.log(`[worker] lienzo ${job.data.lienzoId} exportado (${(bytes / 1e6).toFixed(1)}MB) -> ${ruta_export}`);
+      return;
+    }
+
     const imagen = await prisma.imagen.findUnique({ where: { id: imagenId } });
     if (!imagen) throw new Error(`imagen ${imagenId} no existe`);
 

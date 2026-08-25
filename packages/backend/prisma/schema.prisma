@@ -25,6 +25,12 @@ enum TipoJob {
   upscale
 }
 
+enum EstadoEntrega {
+  pendiente
+  entregado
+  error
+}
+
 enum EstadoJob {
   en_cola
   procesando
@@ -139,6 +145,9 @@ model Lienzo {
   // duplicados y permite mostrar el estado en la UI del lienzo.
   id_presupuesto_ninesys Int?
   id_empresa_ninesys     Int?
+  // Entrega a la PC de producción de la empresa -- se crea al confirmar el
+  // pedido, junto con id_empresa_ninesys.
+  entrega                EntregaLienzo?
 
   @@map("lienzos")
 }
@@ -157,4 +166,56 @@ model LienzoItem {
   imagen     Imagen   @relation(fields: [imagen_id], references: [id], onDelete: Cascade)
 
   @@map("lienzo_items")
+}
+
+// Agente de escritorio instalado en la PC de producción de cada empresa.
+// Se identifica con un token propio de 19print (no con el id_empresa, que no
+// es secreto): el agente manda el token, acá se resuelve a qué empresa
+// corresponde y de ahí en adelante todo el filtrado usa id_empresa_ninesys,
+// igual que el resto del backend.
+//
+// El token vive acá y NO en `empresas` de api_empresas a propósito: esa
+// tabla guarda credenciales que ninesys-api necesita para llamar HACIA
+// AFUERA (ws_token/ws_username son para el servicio de WhatsApp, ver
+// ninesys-api/app/lib/whatsapp.php). Este token va en la dirección opuesta
+// -- la PC se lo presenta a ESTE backend, que es quien lo valida -- así que
+// le corresponde vivir en la base de quien lo valida.
+model EmpresaAgente {
+  id                 Int       @id @default(autoincrement())
+  id_empresa_ninesys Int       @unique
+  nombre             String    @db.VarChar(100)
+  // sha256 del token, nunca el token en claro: permite buscarlo en O(1) y
+  // que una filtración de la DB no entregue credenciales usables. Se muestra
+  // una sola vez al generarlo; si se pierde, se regenera.
+  token_hash         String?   @unique @db.VarChar(64)
+  activo             Boolean   @default(true)
+  ultimo_ping        DateTime?
+  version_agente     String?   @db.VarChar(20)
+  created_at         DateTime  @default(now())
+  entregas           EntregaLienzo[]
+
+  @@map("empresa_agentes")
+}
+
+// Un lienzo pendiente de bajar a la PC de una empresa. Se crea al confirmar
+// el pedido (que es cuando recién se sabe a qué empresa le toca imprimir,
+// ver routes/ninesys.js) y la cola se acumula sola si la PC está apagada.
+model EntregaLienzo {
+  id                Int           @id @default(autoincrement())
+  lienzo_id         Int           @unique
+  empresa_agente_id Int
+  estado            EstadoEntrega @default(pendiente)
+  intentos          Int           @default(0)
+  ultimo_error      String?       @db.Text
+  entregado_en      DateTime?
+  // Cuándo se borró el export del VPS tras cumplirse la retención. El
+  // lienzo siempre se puede regenerar desde el diseño, así que purgar no
+  // pierde información.
+  purgado_en        DateTime?
+  created_at        DateTime      @default(now())
+  lienzo            Lienzo        @relation(fields: [lienzo_id], references: [id], onDelete: Cascade)
+  empresa_agente    EmpresaAgente @relation(fields: [empresa_agente_id], references: [id])
+
+  @@index([empresa_agente_id, estado])
+  @@map("entregas_lienzo")
 }

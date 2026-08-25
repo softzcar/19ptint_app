@@ -3,8 +3,8 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../lib/auth.js";
 import { cargarProyecto } from "./proyectos.js";
 import { calcularAcomodo } from "../lib/packing.js";
-import { generarExport } from "../lib/export.js";
-import { guardar, leer } from "../lib/storage.js";
+import { exportarLienzo } from "../lib/exportarLienzo.js";
+import { leer, borrar } from "../lib/storage.js";
 
 export const lienzosRouter = Router();
 lienzosRouter.use(requireAuth);
@@ -156,11 +156,20 @@ lienzosRouter.patch("/lienzos/:id", cargarLienzoPropio, async (req, res) => {
     return tx.lienzo.findUnique({ where: { id: req.lienzo.id }, include: { items: true } });
   });
 
+  // Recién acá, con la transacción ya confirmada: el export viejo quedó
+  // obsoleto y su fila ya no lo referencia, así que se borra del disco. Antes
+  // solo se ponía ruta_export en null y el archivo quedaba huérfano para
+  // siempre (son ~19MB promedio, hasta 32MB).
+  await borrar(req.lienzo.ruta_export);
+
   res.json(lienzo);
 });
 
 lienzosRouter.delete("/lienzos/:id", cargarLienzoPropio, async (req, res) => {
   await prisma.lienzo.delete({ where: { id: req.lienzo.id } });
+  // El ON DELETE CASCADE solo borra filas: el archivo del disco hay que
+  // borrarlo explícitamente o queda huérfano.
+  await borrar(req.lienzo.ruta_export);
   res.status(204).end();
 });
 
@@ -183,14 +192,12 @@ lienzosRouter.patch("/lienzo-items/:id", requireAuth, async (req, res) => {
 });
 
 lienzosRouter.post("/lienzos/:id/exportar", cargarLienzoPropio, async (req, res) => {
-  const imagenes = await prisma.imagen.findMany({
-    where: { id: { in: req.lienzo.items.map((i) => i.imagen_id) } },
-  });
-  const imagenesPorId = new Map(imagenes.map((i) => [i.id, i]));
-
-  const { buffer, extension } = await generarExport(req.lienzo, req.lienzo.items, imagenesPorId);
-  const ruta_export = await guardar("exports", buffer, extension);
-  const lienzo = await prisma.lienzo.update({ where: { id: req.lienzo.id }, data: { ruta_export } });
+  try {
+    await exportarLienzo(req.lienzo.id);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  const lienzo = await prisma.lienzo.findUnique({ where: { id: req.lienzo.id } });
   res.json(lienzo);
 });
 

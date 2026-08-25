@@ -13,3 +13,15 @@ export async function encolarJob(imagenId, tipo) {
     { removeOnComplete: 100, removeOnFail: 100 }
   );
 }
+
+// Render del export de un lienzo, fuera del request. A diferencia de los
+// jobs de imagen no lleva fila en la tabla `jobs`: esa tabla está atada a
+// imagen_id, y el seguimiento de este trabajo ya lo hace la propia entrega
+// (estado/intentos/ultimo_error en entregas_lienzo).
+export async function encolarExportLienzo(lienzoId) {
+  await colaProcesamiento.add(
+    "exportar_lienzo",
+    { lienzoId, tipo: "exportar_lienzo" },
+    { removeOnComplete: 100, removeOnFail: 100, attempts: 3, backoff: { type: "exponential", delay: 10_000 } }
+  );
+}

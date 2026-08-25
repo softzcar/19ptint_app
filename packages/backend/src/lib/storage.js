@@ -2,7 +2,7 @@
 // pendiente documentado en CONTEXTO.md §10 es migrar a Backblaze B2/Wasabi
 // si el volumen lo justifica — para eso, solo esta función debería cambiar.
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, unlink, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,6 +31,26 @@ export async function guardar(categoria, buffer, extension) {
 
 export async function leer(rutaRelativa) {
   return readFile(rutaAbsoluta(rutaRelativa));
+}
+
+export async function tamano(rutaRelativa) {
+  const info = await stat(rutaAbsoluta(rutaRelativa));
+  return info.size;
+}
+
+// Borra un archivo del storage. No falla si ya no existe: se llama desde
+// caminos donde el archivo puede haber sido purgado antes (re-acomodar,
+// eliminar lienzo, retención), y en todos ellos "no está" es el resultado
+// buscado, no un error.
+export async function borrar(rutaRelativa) {
+  if (!rutaRelativa) return false;
+  try {
+    await unlink(rutaAbsoluta(rutaRelativa));
+    return true;
+  } catch (err) {
+    if (err.code === "ENOENT") return false;
+    throw err;
+  }
 }
 
 export { STORAGE_DIR };

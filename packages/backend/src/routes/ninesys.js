@@ -10,9 +10,47 @@ import {
   crearPresupuesto,
 } from "../lib/ninesysApi.js";
 import { enviarWhatsapp } from "../lib/msgNinesys.js";
+import { encolarExportLienzo } from "../lib/queue.js";
 
 export const ninesysRouter = Router();
 ninesysRouter.use(requireAuth);
+
+/**
+ * Deja el lienzo listo para que el agente de escritorio de esa empresa lo
+ * baje a su PC de producción.
+ *
+ * Si el export todavía no existe (el usuario mandó el pedido sin haber
+ * tocado "Exportar"), se encola el render en vez de hacerlo acá: un lienzo
+ * grande tarda y haría timeoutear el request del presupuesto. La entrega
+ * queda creada igual y simplemente no se le ofrece al agente hasta que
+ * `ruta_export` exista (ver routes/agente.js).
+ */
+async function encolarEntrega(lienzo, idEmpresa) {
+  const agente = await prisma.empresaAgente.findUnique({
+    where: { id_empresa_ninesys: idEmpresa },
+  });
+  if (!agente) {
+    console.warn(`empresa ${idEmpresa} sin agente configurado: el lienzo ${lienzo.id} no se entregará`);
+    return;
+  }
+
+  // upsert y no create: re-enviar el pedido de un lienzo ya entregado debe
+  // volver a ponerlo en cola, no reventar por la unique de lienzo_id.
+  await prisma.entregaLienzo.upsert({
+    where: { lienzo_id: lienzo.id },
+    create: { lienzo_id: lienzo.id, empresa_agente_id: agente.id },
+    update: {
+      empresa_agente_id: agente.id,
+      estado: "pendiente",
+      intentos: 0,
+      ultimo_error: null,
+      entregado_en: null,
+      purgado_en: null,
+    },
+  });
+
+  if (!lienzo.ruta_export) await encolarExportLienzo(lienzo.id);
+}
 
 function idEmpresaDeParam(req, res) {
   const idEmpresa = Number(req.params.idEmpresa);
@@ -127,6 +165,17 @@ ninesysRouter.post("/:idEmpresa/presupuesto", async (req, res) => {
       where: { id: lienzo.id },
       data: { id_presupuesto_ninesys: idPresupuesto, id_empresa_ninesys: idEmpresa },
     });
+
+    // Recién en este punto se sabe a qué empresa le toca imprimir, así que
+    // es acá donde se encola la entrega a su PC de producción. Nunca debe
+    // tumbar la respuesta: el presupuesto ya se creó de verdad en Ninesys, y
+    // un fallo de entrega se resuelve después (igual que la notificación de
+    // WhatsApp más abajo).
+    try {
+      await encolarEntrega(lienzo, idEmpresa);
+    } catch (err) {
+      console.error(`no se pudo encolar la entrega del lienzo ${lienzo.id}:`, err.message);
+    }
 
     res.status(201).json({ idPresupuesto });
   } catch (err) {
