@@ -13,20 +13,76 @@ import { verificarLimiteDiario } from "../lib/limites.js";
 export const imagenesRouter = Router();
 imagenesRouter.use(requireAuth);
 
-// Tamaño máximo de imagen de entrada (CONTEXTO.md §5, §10) — controla los
-// tiempos de quitado de fondo/upscale en CPU.
-const MAX_LADO_PX = 4000;
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+// Límites de imagen de entrada (CONTEXTO.md §5, §10).
+//
+// El tope anterior de 4000px era MÁS CHICO que el propio lienzo: a 300dpi un
+// DTF de 58cm son 6.850px y una sublimación de 158cm son 18.661px, así que
+// era imposible subir una imagen capaz de cubrir esos anchos a calidad plena.
+//
+// 12.000px cubre el DTF de 58cm con holgura y una sublimación de hasta ~101cm.
+// Pero el lado no es lo que consume memoria: un banner de 18.000x500 son solo
+// 9MP (inofensivo) y un 12.000x12.000 son 144MP (~580MB en crudo). Por eso el
+// guard real es por ÁREA -- 60MP ≈ 240MB en crudo, con margen de sobra sobre
+// los ~4GB libres del VPS, que además es compartido con otros sitios (ver el
+// incidente de §14, donde un trabajo pesado tumbó el servidor entero).
+const MAX_LADO_PX = 12000;
+const MAX_MEGAPIXELES = 60;
+// Techo absoluto de decodificación: por encima de esto ni siquiera se intenta
+// abrir la imagen, porque el decode en sí ya arriesga la memoria del VPS.
+const MAX_MEGAPIXELES_DECODE = 200;
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
+
+/**
+ * Deja la imagen dentro de límites seguros. En vez de rechazar (que es lo que
+ * hacía antes y bloqueaba trabajos legítimos), la reduce conservando la
+ * proporción: por encima de estos tamaños los píxeles sobrantes no aportan
+ * nada imprimible -- el acomodo igual capa el ancho al del lienzo.
+ */
+async function normalizarEntrada(buffer, nombreOriginal) {
+  const meta = await sharp(buffer, { limitInputPixels: MAX_MEGAPIXELES_DECODE * 1e6 })
+    .metadata()
+    .catch(() => {
+      throw new Error(
+        `${nombreOriginal}: la imagen es demasiado grande para procesarla (máximo ${MAX_MEGAPIXELES_DECODE} megapíxeles)`
+      );
+    });
+
+  const ancho = meta.width ?? 0;
+  const alto = meta.height ?? 0;
+  if (!ancho || !alto) throw new Error(`${nombreOriginal}: no se pudo leer el tamaño de la imagen`);
+
+  const megapixeles = (ancho * alto) / 1e6;
+  if (ancho <= MAX_LADO_PX && alto <= MAX_LADO_PX && megapixeles <= MAX_MEGAPIXELES) {
+    return { buffer, metadata: meta };
+  }
+
+  // Se aplica el factor más restrictivo entre el del lado y el del área.
+  const factor = Math.min(
+    MAX_LADO_PX / ancho,
+    MAX_LADO_PX / alto,
+    Math.sqrt(MAX_MEGAPIXELES / megapixeles),
+    1
+  );
+  const nuevoAncho = Math.max(1, Math.round(ancho * factor));
+  const nuevoAlto = Math.max(1, Math.round(alto * factor));
+
+  const reducido = await sharp(buffer, { limitInputPixels: MAX_MEGAPIXELES_DECODE * 1e6 })
+    .resize(nuevoAncho, nuevoAlto, { fit: "inside" })
+    .toBuffer();
+
+  console.log(
+    `[imagenes] ${nombreOriginal}: ${ancho}x${alto} (${megapixeles.toFixed(1)}MP) reducida a ${nuevoAncho}x${nuevoAlto}`
+  );
+  return { buffer: reducido, metadata: await sharp(reducido).metadata() };
+}
 
 // Crea la imagen tal cual se subió (con su fondo original, sin pasar por la
 // IA) -- comparte el mismo camino tanto si el archivo viene de una subida
 // manual como de la búsqueda web. El quitado de fondo ahora es opcional: se
 // dispara solo si el usuario prende el switch (POST /imagenes/:id/quitar-fondo).
-async function crearImagenDesdeBuffer(proyectoId, buffer, nombreOriginal) {
-  const metadata = await sharp(buffer).metadata();
-  if ((metadata.width ?? 0) > MAX_LADO_PX || (metadata.height ?? 0) > MAX_LADO_PX) {
-    throw new Error(`${nombreOriginal}: excede el tamaño máximo de entrada (${MAX_LADO_PX}px por lado)`);
-  }
+async function crearImagenDesdeBuffer(proyectoId, bufferEntrada, nombreOriginal) {
+  const { buffer, metadata } = await normalizarEntrada(bufferEntrada, nombreOriginal);
   const ext = path.extname(nombreOriginal) || `.${metadata.format ?? "jpg"}`;
   const ruta_original = await guardar("originales", buffer, ext);
   return prisma.imagen.create({
@@ -74,11 +130,13 @@ imagenesRouter.post(
   upload.single("imagen"),
   async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "No se recibió la imagen" });
-    const metadata = await sharp(req.file.buffer).metadata();
-    if ((metadata.width ?? 0) > MAX_LADO_PX || (metadata.height ?? 0) > MAX_LADO_PX) {
-      return res.status(400).json({ error: `Excede el tamaño máximo de entrada (${MAX_LADO_PX}px por lado)` });
+    let buffer, metadata;
+    try {
+      ({ buffer, metadata } = await normalizarEntrada(req.file.buffer, req.file.originalname || "texto.png"));
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
     }
-    const ruta = await guardar("originales", req.file.buffer, ".png");
+    const ruta = await guardar("originales", buffer, ".png");
     const imagen = await prisma.imagen.create({
       data: {
         proyecto_id: req.proyecto.id,
