@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../lib/api.js";
-import { useImagenes, limiteAnchoUtilMm, validarParaAcomodar } from "../composables/useImagenes.js";
+import { useImagenes, limiteAnchoUtilMm, validarParaAcomodar, erroresPorImagen } from "../composables/useImagenes.js";
 import PedidoWhatsApp from "../components/PedidoWhatsApp.vue";
 import EstadoEntrega from "../components/EstadoEntrega.vue";
 import CargaImagenes from "../components/CargaImagenes.vue";
@@ -40,6 +40,7 @@ const imagenesParaAcomodar = computed(() =>
 const erroresGeneracion = computed(() =>
   validarParaAcomodar(imagenesParaAcomodar.value, editForm.value.ancho_mm, editForm.value.margen_mm)
 );
+const erroresDeImagen = computed(() => erroresPorImagen(erroresGeneracion.value));
 
 function abrirEdicion() {
   editForm.value = {
@@ -308,7 +309,14 @@ onUnmounted(() => clearInterval(intervaloFondo));
           Imágenes del proyecto — marcá cuáles incluir en este lienzo
         </p>
         <div class="grid sm:grid-cols-3 gap-3">
-          <TarjetaImagen v-for="img in imgs.imagenes.value" :key="img.id" :img="img" :store="imgs">
+          <TarjetaImagen
+            v-for="img in imgs.imagenes.value"
+            :key="img.id"
+            :img="img"
+            :store="imgs"
+            :errores="erroresDeImagen[img.id] ?? []"
+            :reservar-espacio-error="erroresGeneracion.length > 0"
+          >
             <template #antes-nombre="{ img: imgSlot }">
               <label
                 v-if="imgSlot.estado_fondo === 'listo' && imgSlot.ancho_mm && imgSlot.alto_mm"
@@ -336,8 +344,13 @@ onUnmounted(() => clearInterval(intervaloFondo));
           Cancelar
         </button>
       </div>
-      <ul v-if="erroresGeneracion.length" class="text-xs text-red-600 space-y-0.5 list-disc pl-4">
-        <li v-for="(msg, i) in erroresGeneracion" :key="i">{{ msg }}</li>
+      <!-- El motivo va ANTES del nombre: con nombres de archivo largos, el
+           error al final obliga a leer toda la línea para entender qué falta. -->
+      <ul v-if="erroresGeneracion.length" class="text-xs text-red-600 space-y-1">
+        <li v-for="(e, i) in erroresGeneracion" :key="i" class="flex gap-1.5">
+          <span class="font-semibold whitespace-nowrap">{{ e.breve }}:</span>
+          <span class="text-red-600/75 truncate" :title="`${e.nombre} — ${e.detalle}`">{{ e.nombre }}</span>
+        </li>
       </ul>
     </section>
 

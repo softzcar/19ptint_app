@@ -2,6 +2,13 @@
 const props = defineProps({
   img: { type: Object, required: true },
   store: { type: Object, required: true },
+  // Errores de esta imagen, en versión corta (ver validarParaAcomodar).
+  errores: { type: Array, default: () => [] },
+  // Cuando alguna tarjeta de la grilla tiene error, TODAS reservan el mismo
+  // espacio al pie aunque no lo usen: así el bloque de error no empuja unas
+  // tarjetas y otras no, y la grilla se mantiene pareja. Si no hay ningún
+  // error en toda la grilla no se reserva nada y no se desperdicia lugar.
+  reservarEspacioError: { type: Boolean, default: false },
   // Slot opcional para un control extra (ej. checkbox "incluir en este
   // lienzo") que se muestra antes del nombre del archivo, sin duplicar el
   // resto de la tarjeta -- usado desde LienzoView.vue.
@@ -9,7 +16,10 @@ const props = defineProps({
 </script>
 
 <template>
-  <div class="border border-black/5 rounded-xl p-3 space-y-2.5">
+  <!-- flex-col + h-full: la grilla estira todas las tarjetas de una fila al
+       mismo alto, y esto hace que el bloque de error quede pegado abajo en
+       todas por igual (ver mb-auto más abajo). -->
+  <div class="border border-black/5 rounded-xl p-3 space-y-2.5 flex flex-col h-full">
     <img
       v-if="img.estado_fondo === 'listo' && store.previewUrls.value[img.id]"
       :src="store.previewUrls.value[img.id]"
@@ -93,7 +103,7 @@ const props = defineProps({
       <button class="text-red-600/70 hover:text-red-600 transition-colors" @click="store.eliminarImagen(img)">Eliminar</button>
     </div>
 
-    <label class="flex items-center justify-between gap-2 text-xs text-np-ink/60 pt-1.5 border-t border-black/5">
+    <label class="flex items-center justify-between gap-2 text-xs text-np-ink/60 pt-1.5 border-t border-black/5 mb-auto">
       <span>
         {{ store.cambiandoFondo.value[img.id] ? "Actualizando…" : "Quitar fondo" }}
       </span>
@@ -105,5 +115,17 @@ const props = defineProps({
         @change="img.quitar_fondo ? store.mantenerFondo(img) : store.quitarFondo(img)"
       />
     </label>
+
+    <!-- Motivo por el que esta imagen bloquea el acomodo. Se mantiene corto a
+         propósito: el detalle completo va en la lista bajo el botón. -->
+    <div
+      v-if="reservarEspacioError"
+      class="pt-1.5 border-t border-black/5 min-h-[2.25rem] flex items-start"
+      :class="errores.length ? 'text-red-600' : ''"
+    >
+      <p v-if="errores.length" class="text-[11px] leading-snug font-medium">
+        {{ errores.join(" · ") }}
+      </p>
+    </div>
   </div>
 </template>

@@ -312,35 +312,55 @@ export function limiteAnchoUtilMm(anchoLienzoMm, margenMm) {
  * schema.prisma) o más ancha que lo que entra en el lienzo quedaría
  * silenciosamente afuera del acomodo (o el backend la rechazaría con un
  * error genérico) -- mejor avisar antes, imagen por imagen.
+ *
+ * Devuelve objetos y no strings ya armados porque el mismo error se muestra
+ * en dos lugares con distinto formato: `breve` va dentro de la tarjeta de la
+ * imagen (tiene que ser corto y de alto predecible para no desalinear la
+ * grilla) y `detalle` en la lista de abajo, donde sí hay lugar para explicar.
+ *
+ * @returns {Array<{imagenId:number, nombre:string, breve:string, detalle:string}>}
  */
 export function validarParaAcomodar(imagenes, anchoLienzoMm, margenMm) {
   const limite = limiteAnchoUtilMm(anchoLienzoMm, margenMm);
   const errores = [];
-  for (const img of imagenes) {
-    const nombre = img.nombre_original ?? `#${img.id}`;
+  const agregar = (img, breve, detalle) =>
+    errores.push({ imagenId: img.id, nombre: img.nombre_original ?? `#${img.id}`, breve, detalle });
 
+  for (const img of imagenes) {
     // Una imagen puede quedar seleccionada (checkbox marcado en
     // LienzoView) y recién después el usuario prende el switch "Quitar
     // fondo" sobre ella -- la selección sigue en true aunque el checkbox ya
     // no se vea, así que sin este chequeo el acomodo la ignoraría en
     // silencio (el backend solo empaqueta estado_fondo=listo).
     if (img.estado_fondo === "pendiente" || img.estado_fondo === "procesando") {
-      errores.push(`${nombre}: se está quitando el fondo, esperá a que termine antes de acomodar.`);
+      agregar(img, "Quitando el fondo", "se está quitando el fondo, esperá a que termine antes de acomodar.");
       continue;
     }
     if (img.estado_fondo !== "listo") continue; // error u otro estado: se excluye en silencio, sin cambios
     if (!img.ancho_mm || !img.alto_mm) {
-      errores.push(`${nombre}: falta definir el ancho y el alto.`);
+      agregar(img, "Falta definir el tamaño", "falta definir el ancho y el alto.");
       continue;
     }
     if (!Number(img.copias)) {
-      errores.push(`${nombre}: indicá la cantidad de copias (no puede quedar en 0).`);
+      agregar(img, "Falta indicar las copias", "indicá la cantidad de copias (no puede quedar en 0).");
     }
     if (Number(img.ancho_mm) > limite) {
-      errores.push(
-        `${nombre}: el ancho (${(Number(img.ancho_mm) / 10).toFixed(1)}cm) supera el ancho disponible del lienzo (${(limite / 10).toFixed(1)}cm, con ${margenMm}mm de margen a cada lado).`
+      agregar(
+        img,
+        `Ancho excedido (máx. ${(limite / 10).toFixed(1)}cm)`,
+        `el ancho (${(Number(img.ancho_mm) / 10).toFixed(1)}cm) supera el ancho disponible del lienzo (${(limite / 10).toFixed(1)}cm, con ${margenMm}mm de margen a cada lado).`
       );
     }
   }
   return errores;
+}
+
+/**
+ * Agrupa los errores por imagen para poder pasárselos a cada TarjetaImagen.
+ * Una imagen puede acumular más de uno (ej. sin copias Y ancho excedido).
+ */
+export function erroresPorImagen(errores) {
+  const mapa = {};
+  for (const e of errores) (mapa[e.imagenId] ??= []).push(e.breve);
+  return mapa;
 }

@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../lib/api.js";
-import { useImagenes, limiteAnchoUtilMm, validarParaAcomodar } from "../composables/useImagenes.js";
+import { useImagenes, limiteAnchoUtilMm, validarParaAcomodar, erroresPorImagen } from "../composables/useImagenes.js";
 import CargaImagenes from "../components/CargaImagenes.vue";
 import TarjetaImagen from "../components/TarjetaImagen.vue";
 
@@ -33,6 +33,7 @@ const hayProcesando = computed(() =>
 const erroresGeneracion = computed(() =>
   validarParaAcomodar(imgs.imagenes.value ?? [], lienzoForm.value.ancho_mm, lienzoForm.value.margen_mm)
 );
+const erroresDeImagen = computed(() => erroresPorImagen(erroresGeneracion.value));
 
 async function cargar() {
   // imgs.cargar() ya trae el proyecto completo (imágenes + lienzos) --
@@ -85,7 +86,14 @@ onUnmounted(() => clearInterval(intervalo));
       <CargaImagenes :proyecto-id="props.id" :store="imgs" />
 
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <TarjetaImagen v-for="img in imgs.imagenes.value" :key="img.id" :img="img" :store="imgs" />
+        <TarjetaImagen
+          v-for="img in imgs.imagenes.value"
+          :key="img.id"
+          :img="img"
+          :store="imgs"
+          :errores="erroresDeImagen[img.id] ?? []"
+          :reservar-espacio-error="erroresGeneracion.length > 0"
+        />
       </div>
     </section>
 
@@ -146,8 +154,14 @@ onUnmounted(() => clearInterval(intervalo));
         </button>
         <p class="text-xs text-np-ink/40">{{ imagenesListas.length }} imagen(es) lista(s) para acomodar.</p>
       </div>
-      <ul v-if="erroresGeneracion.length" class="text-xs text-red-600 space-y-0.5 list-disc pl-4">
-        <li v-for="(msg, i) in erroresGeneracion" :key="i">{{ msg }}</li>
+      <!-- El motivo va ANTES del nombre: los nombres de archivo suelen ser
+           larguísimos e ilegibles, y si el error va al final hay que leer
+           toda la línea para enterarse de qué falta. -->
+      <ul v-if="erroresGeneracion.length" class="text-xs text-red-600 space-y-1">
+        <li v-for="(e, i) in erroresGeneracion" :key="i" class="flex gap-1.5">
+          <span class="font-semibold whitespace-nowrap">{{ e.breve }}:</span>
+          <span class="text-red-600/75 truncate" :title="`${e.nombre} — ${e.detalle}`">{{ e.nombre }}</span>
+        </li>
       </ul>
     </section>
 
