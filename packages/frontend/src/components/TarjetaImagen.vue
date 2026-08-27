@@ -90,13 +90,22 @@ const props = defineProps({
       <span v-if="store.progresoUpscale.value[img.id] !== undefined" class="text-np-ink/40">
         Aumentando resolución… {{ store.progresoUpscale.value[img.id] }}%
       </span>
-      <button
-        v-else-if="img.estado_fondo === 'listo' && store.dispositivoCompatible"
-        class="text-np-teal font-medium hover:text-np-teal-dark transition-colors"
-        @click="store.pedirUpscale(img)"
-      >
-        {{ img.estado_upscale === "listo" ? "Upscale ✓ (repetir)" : "Aumentar resolución" }}
-      </button>
+      <span v-else-if="img.estado_fondo === 'listo' && store.dispositivoCompatible" class="flex items-center gap-2">
+        <button
+          class="text-np-teal font-medium hover:text-np-teal-dark transition-colors"
+          @click="store.pedirUpscale(img)"
+        >
+          {{ img.estado_upscale === "listo" ? "Upscale ✓ (repetir)" : "Aumentar resolución" }}
+        </button>
+        <button
+          v-if="img.ruta_pre_upscale"
+          class="text-np-ink/50 hover:text-np-ink transition-colors underline"
+          title="Volver a la imagen de antes del último aumento de resolución"
+          @click="store.revertirUpscale(img)"
+        >
+          Deshacer
+        </button>
+      </span>
       <span v-else-if="img.estado_fondo === 'listo'" class="text-np-ink/40">
         Su dispositivo no es compatible con esta aplicación
       </span>

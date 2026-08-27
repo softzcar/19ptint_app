@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@tensorflow/tfjs": "~4.11.0",
-    "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
     "@upscalerjs/default-model": "^1.0.0",
     "axios": "^1.7.7",
     "konva": "^9.3.16",

@@ -95,10 +95,11 @@ model Imagen {
   dpi              Int           @default(300)
   ancho_mm         Decimal?      @db.Decimal(8, 2)
   alto_mm          Decimal?      @db.Decimal(8, 2)
-  // Nace en 0 a propósito -- obliga al usuario a confirmar la cantidad
-  // real antes de que la imagen entre al acomodo (0 copias = el motor de
+  // Nace en 1 para no obligar a tocar el campo en el caso común (una copia).
+  // Sigue siendo editable por el usuario, incluido bajarlo a 0 -- eso sigue
+  // bloqueando el acomodo hasta que lo corrija (0 copias = el motor de
   // empaquetado no genera ninguna pieza para ella, ver packing-engine).
-  copias           Int           @default(0)
+  copias           Int           @default(1)
   estado_fondo     EstadoProceso @default(pendiente)
   // Preferencia del usuario, independiente de estado_fondo (que es el
   // estado del PROCESO): true = se quitó/se va a quitar el fondo con IA,
@@ -106,6 +107,11 @@ model Imagen {
   // tal cual (ver POST /imagenes/:id/mantener-fondo).
   quitar_fondo     Boolean       @default(true)
   estado_upscale   EstadoProceso @default(omitido)
+  // Apunta al archivo de ruta_procesada de justo ANTES del último upscale
+  // aplicado -- permite deshacerlo si el resultado sale mal (ver POST
+  // /imagenes/:id/revertir-upscale). Null cuando no hay upscale para
+  // deshacer (nunca se corrió uno, o ya se revirtió).
+  ruta_pre_upscale String?       @db.VarChar(500)
   created_at       DateTime      @default(now())
   proyecto         Proyecto      @relation(fields: [proyecto_id], references: [id], onDelete: Cascade)
   jobs             Job[]
@@ -218,4 +224,29 @@ model EntregaLienzo {
 
   @@index([empresa_agente_id, estado])
   @@map("entregas_lienzo")
+}
+
+// Curaduría de admin sobre el catálogo de Ninesys: GET /products trae TODO
+// lo que esa empresa marcó como es_servicio_de_impresion, que puede incluir
+// productos que no tienen sentido para armar un lienzo acá. Presencia =
+// visible en el selector de servicio del pedido (routes/ninesys.js filtra
+// por esta tabla); sin fila para un `cod` dado, no se muestra -- opt-in a
+// propósito, no opt-out, para que un producto nuevo en Ninesys no aparezca
+// solo hasta que un admin lo revise.
+//
+// `precio` es el que el admin eligió entre los tramos que trae Ninesys
+// (products_prices no tiene min/max estructurado, ver ninesysApi.js) -- se
+// fija una sola vez acá para que quien pide el presupuesto nunca tenga que
+// ver ni elegir entre tramos de precio, solo el nombre del servicio.
+model ServicioNinesysVisible {
+  id                 Int      @id @default(autoincrement())
+  id_empresa_ninesys Int
+  // Código de producto de Ninesys (products.cod), no un id propio de esta
+  // app -- es lo único estable que ninesys-api expone para identificarlo.
+  cod                String   @db.VarChar(64)
+  precio             Decimal  @db.Decimal(10, 2)
+  created_at         DateTime @default(now())
+
+  @@unique([id_empresa_ninesys, cod])
+  @@map("servicios_ninesys_visibles")
 }

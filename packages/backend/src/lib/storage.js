@@ -2,7 +2,7 @@
 // pendiente documentado en CONTEXTO.md §10 es migrar a Backblaze B2/Wasabi
 // si el volumen lo justifica — para eso, solo esta función debería cambiar.
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile, readFile, unlink, stat } from "node:fs/promises";
+import { mkdir, writeFile, readFile, unlink, stat, rename, copyFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,6 +26,34 @@ export async function guardar(categoria, buffer, extension) {
   const nombre = `${randomUUID()}${extension}`;
   const rutaRelativa = path.join(categoria, nombre);
   await writeFile(path.join(dir, nombre), buffer);
+  return rutaRelativa;
+}
+
+// Como guardar(), pero a partir de un archivo ya en disco (ej. lo que
+// multer con diskStorage dejó en el tmpdir) en vez de un buffer en memoria
+// -- para archivos grandes sin límite de tamaño (lienzos ya armados, ver
+// routes/lienzos.js), cargarlos enteros a un Buffer primero arriesga la
+// memoria del VPS igual que decodificarlos (ver el incidente de CONTEXTO.md
+// §14).
+export async function guardarDesdeArchivo(categoria, rutaTemporal, extension) {
+  if (!CATEGORIAS.includes(categoria)) {
+    throw new Error(`categoría de storage desconocida: ${categoria}`);
+  }
+  const dir = path.join(STORAGE_DIR, categoria);
+  await mkdir(dir, { recursive: true });
+  const nombre = `${randomUUID()}${extension}`;
+  const rutaRelativa = path.join(categoria, nombre);
+  const destino = path.join(dir, nombre);
+  try {
+    await rename(rutaTemporal, destino);
+  } catch (err) {
+    // EXDEV: el tmpdir y storage/ están en filesystems/mounts distintos,
+    // rename() no puede hacer un mv atómico entre ellos -- hay que copiar y
+    // borrar el temporal a mano.
+    if (err.code !== "EXDEV") throw err;
+    await copyFile(rutaTemporal, destino);
+    await unlink(rutaTemporal);
+  }
   return rutaRelativa;
 }
 

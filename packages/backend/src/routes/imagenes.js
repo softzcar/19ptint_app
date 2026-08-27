@@ -9,6 +9,7 @@ import { encolarJob } from "../lib/queue.js";
 import { cargarProyecto } from "./proyectos.js";
 import { buscarImagenes } from "../lib/pexels.js";
 import { verificarLimiteDiario } from "../lib/limites.js";
+import { pdfAPng } from "../lib/pdf.js";
 
 export const imagenesRouter = Router();
 imagenesRouter.use(requireAuth);
@@ -45,6 +46,12 @@ export const MIME_POR_EXT = {
   ".avif": "image/avif",
 };
 
+// El ai-service decodifica con Pillow, que no trae soporte AVIF (necesita el
+// plugin pillow-avif-plugin, no instalado). TIFF/BMP/HEIC no aparecen acá
+// porque normalizarEntrada() ya los convierte a PNG al subir -- lo único que
+// puede llegar hasta acá en un formato que Pillow no entiende es AVIF.
+const FORMATOS_SIN_QUITAR_FONDO = new Set([".avif"]);
+
 /**
  * Formato de salida servible para el navegador, o null si hay que convertir.
  * sharp reporta AVIF y HEIC ambos como "heif": se distinguen por el códec
@@ -60,6 +67,36 @@ function formatoServible(meta) {
   return null;
 }
 
+// Si la imagen ya viene con fondo transparente de fábrica (ej. exportada de
+// Photoroom antes de subirla, sin pasar por nuestro quitado de fondo), el
+// canvas del archivo suele traer mucho más margen transparente alrededor del
+// contenido real que lo que se ve a simple vista. Ese margen queda adentro
+// de ancho_px/alto_px, y como el acomodo (packing-engine) solo conoce el
+// tamaño del rectángulo (no qué píxeles son visibles), el margen configurado
+// se suma AL margen transparente ya incluido en cada imagen -- las copias
+// terminan mucho más separadas de lo que dice el margen.
+//
+// CONTEXTO.md §7 ya documenta este recorte para lo que pasa por rembg
+// (ai-service, después de quitar el fondo); esto cubre el mismo recorte
+// para lo que entra ya transparente desde afuera. `background` explícito en
+// alpha:0 es necesario -- sin él, sharp también recorta por color de fondo
+// en imágenes SIN transparencia (ej. una foto opaca con fondo blanco liso),
+// que no es lo que se busca acá.
+async function recortarTransparencia(buffer, meta, limitInputPixels) {
+  if (!meta.hasAlpha) return { buffer, meta };
+  try {
+    const { data, info } = await sharp(buffer, { limitInputPixels })
+      .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .toBuffer({ resolveWithObject: true });
+    if (info.width === meta.width && info.height === meta.height) return { buffer, meta };
+    return { buffer: data, meta: await sharp(data).metadata() };
+  } catch {
+    // Sin borde transparente que recortar (o imagen enteramente
+    // transparente, o formato sin encoder como AVIF): se deja tal cual.
+    return { buffer, meta };
+  }
+}
+
 /**
  * Deja la imagen dentro de límites seguros y en un formato que el navegador
  * pueda mostrar. En vez de rechazar por tamaño (que es lo que hacía antes y
@@ -72,13 +109,25 @@ function formatoServible(meta) {
  * que puede mentir, y el archivo se servía siempre como image/png).
  */
 async function normalizarEntrada(buffer, nombreOriginal) {
-  const meta = await sharp(buffer, { limitInputPixels: MAX_MEGAPIXELES_DECODE * 1e6 })
+  // Los PDF no pasan por sharp (ver lib/pdf.js): se detectan por firma de
+  // archivo, no por la extensión del nombre subido (que puede mentir), y se
+  // convierten a PNG antes de entrar al resto del pipeline -- de ahí en más
+  // un PDF es indistinguible de cualquier otra imagen subida.
+  if (buffer.subarray(0, 5).toString("latin1") === "%PDF-") {
+    buffer = await pdfAPng(buffer);
+  }
+
+  const metaOriginal = await sharp(buffer, { limitInputPixels: MAX_MEGAPIXELES_DECODE * 1e6 })
     .metadata()
     .catch(() => {
       throw new Error(
         `${nombreOriginal}: la imagen es demasiado grande para procesarla (máximo ${MAX_MEGAPIXELES_DECODE} megapíxeles)`
       );
     });
+
+  const recortado = await recortarTransparencia(buffer, metaOriginal, MAX_MEGAPIXELES_DECODE * 1e6);
+  buffer = recortado.buffer;
+  const meta = recortado.meta;
 
   const ancho = meta.width ?? 0;
   const alto = meta.height ?? 0;
@@ -287,6 +336,12 @@ imagenesRouter.post("/imagenes/:id/mantener-fondo", cargarImagenPropia, async (r
     where: { id: req.imagen.id },
     data: {
       ruta_procesada: req.imagen.ruta_original,
+      // Cualquier upscale anterior corrió sobre una imagen que ya no es la
+      // actual (el fondo removido, o incluso otra pasada de quitar-fondo):
+      // se invalida junto con el fondo, si no la tarjeta seguiría mostrando
+      // "Upscale ✓" sobre el original sin upscalear.
+      ruta_pre_upscale: null,
+      estado_upscale: "omitido",
       ancho_px: metadata.width,
       alto_px: metadata.height,
       estado_fondo: "listo",
@@ -301,6 +356,16 @@ imagenesRouter.post("/imagenes/:id/mantener-fondo", cargarImagenPropia, async (r
 imagenesRouter.post("/imagenes/:id/quitar-fondo", cargarImagenPropia, async (req, res) => {
   if (["pendiente", "procesando"].includes(req.imagen.estado_fondo)) {
     return res.status(409).json({ error: "Ya se está procesando" });
+  }
+  // Rechazar acá, antes de encolar, formatos que el ai-service no puede
+  // decodificar: sin esto el job se manda igual, tarda en fallar y el
+  // usuario ve un error genérico ("Archivo no es una imagen válida") en vez
+  // de saber que el problema es el formato del archivo.
+  const ext = path.extname(req.imagen.ruta_original).toLowerCase();
+  if (FORMATOS_SIN_QUITAR_FONDO.has(ext)) {
+    return res.status(400).json({
+      error: "El quitado de fondo automático no soporta este formato de imagen. Subí un PNG, JPEG, WEBP o GIF.",
+    });
   }
   try {
     await verificarLimiteDiario(req.imagen.proyecto.usuario_id);
@@ -350,6 +415,9 @@ imagenesRouter.post(
     const imagen = await prisma.imagen.update({
       where: { id: req.imagen.id },
       data: {
+        // Guarda el archivo de ANTES del upscale para poder deshacerlo (ver
+        // POST /imagenes/:id/revertir-upscale) si el resultado sale mal.
+        ruta_pre_upscale: req.imagen.ruta_procesada,
         ruta_procesada,
         estado_upscale: "listo",
         ancho_px: metadata.width,
@@ -359,6 +427,31 @@ imagenesRouter.post(
     res.json(imagen);
   }
 );
+
+// Deshace el último upscale (client-side o server-side): vuelve a apuntar
+// ruta_procesada al archivo de justo antes, sin volver a llamar a la IA. Solo
+// existe un nivel de historial -- no hay pila de upscales, un solo "antes".
+imagenesRouter.post("/imagenes/:id/revertir-upscale", cargarImagenPropia, async (req, res) => {
+  if (["pendiente", "procesando"].includes(req.imagen.estado_upscale)) {
+    return res.status(409).json({ error: "Esperá a que termine de procesar antes de deshacerlo" });
+  }
+  if (!req.imagen.ruta_pre_upscale) {
+    return res.status(400).json({ error: "No hay una versión anterior a la que volver" });
+  }
+  const buffer = await leer(req.imagen.ruta_pre_upscale);
+  const metadata = await sharp(buffer).metadata();
+  const imagen = await prisma.imagen.update({
+    where: { id: req.imagen.id },
+    data: {
+      ruta_procesada: req.imagen.ruta_pre_upscale,
+      ruta_pre_upscale: null,
+      ancho_px: metadata.width,
+      alto_px: metadata.height,
+      estado_upscale: "omitido",
+    },
+  });
+  res.json(imagen);
+});
 
 imagenesRouter.delete("/imagenes/:id", cargarImagenPropia, async (req, res) => {
   await prisma.imagen.delete({ where: { id: req.imagen.id } });

@@ -7,33 +7,32 @@ const emit = defineEmits(["seleccionar"]);
 
 const cargando = ref(false);
 const error = ref("");
-const productos = ref([]);
-const opcionElegida = ref("");
+const servicios = ref([]);
+const codElegido = ref("");
 
-// Un producto puede tener varios tramos de precio (products_prices, sin
-// min/max estructurado -- ver plan de integración §A.4) -- cada tramo se
-// ofrece como opción separada del select.
+// Un producto en Ninesys puede traer varios tramos de precio (por
+// cantidad); el admin ya eligió cuál usar para cada uno (ver
+// AdminServiciosView.vue) y acá solo se ofrece el nombre -- quien pide el
+// presupuesto nunca ve precios ni tiene que elegir un tramo.
 const opciones = computed(() =>
-  productos.value.flatMap((p) =>
-    (p.prices?.length ? p.prices : [{ id: "unico", price: p.regular_price ?? 0, description: "" }]).map((tramo) => ({
-      valor: `${p.cod}:${tramo.id}`,
-      etiqueta: tramo.description ? `${p.name} — ${tramo.description} ($${tramo.price}/m)` : `${p.name} ($${tramo.price}/m)`,
-      cod: p.cod,
-      categoria: p.categories?.[0]?.id ?? 0,
-      name: p.name,
-      precio: Number(tramo.price),
-    }))
-  )
+  servicios.value.map((s) => ({
+    valor: s.cod,
+    etiqueta: s.name,
+    cod: s.cod,
+    categoria: s.categoria,
+    name: s.name,
+    precio: s.precio,
+  }))
 );
 
 async function cargar() {
   cargando.value = true;
   error.value = "";
-  productos.value = [];
-  opcionElegida.value = "";
+  servicios.value = [];
+  codElegido.value = "";
   try {
     const { data } = await api.get(`/ninesys/${props.idEmpresa}/productos-impresion`);
-    productos.value = data.productos ?? [];
+    servicios.value = data.servicios ?? [];
   } catch (err) {
     error.value = err.response?.data?.error ?? "No se pudo cargar el catálogo de servicios";
   } finally {
@@ -43,7 +42,7 @@ async function cargar() {
 
 watch(() => props.idEmpresa, cargar, { immediate: true });
 
-watch(opcionElegida, (valor) => {
+watch(codElegido, (valor) => {
   const opcion = opciones.value.find((o) => o.valor === valor);
   emit("seleccionar", opcion ?? null);
 });
@@ -59,7 +58,7 @@ watch(opcionElegida, (valor) => {
     </p>
     <select
       v-else
-      v-model="opcionElegida"
+      v-model="codElegido"
       class="w-full border border-black/10 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-np-teal/40"
     >
       <option value="" disabled>Elegí un servicio…</option>

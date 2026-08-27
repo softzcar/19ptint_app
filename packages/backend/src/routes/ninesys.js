@@ -10,47 +10,10 @@ import {
   crearPresupuesto,
 } from "../lib/ninesysApi.js";
 import { enviarWhatsapp } from "../lib/msgNinesys.js";
-import { encolarExportLienzo } from "../lib/queue.js";
+import { encolarEntregaLienzo } from "../lib/entregas.js";
 
 export const ninesysRouter = Router();
 ninesysRouter.use(requireAuth);
-
-/**
- * Deja el lienzo listo para que el agente de escritorio de esa empresa lo
- * baje a su PC de producción.
- *
- * Si el export todavía no existe (el usuario mandó el pedido sin haber
- * tocado "Exportar"), se encola el render en vez de hacerlo acá: un lienzo
- * grande tarda y haría timeoutear el request del presupuesto. La entrega
- * queda creada igual y simplemente no se le ofrece al agente hasta que
- * `ruta_export` exista (ver routes/agente.js).
- */
-async function encolarEntrega(lienzo, idEmpresa) {
-  const agente = await prisma.empresaAgente.findUnique({
-    where: { id_empresa_ninesys: idEmpresa },
-  });
-  if (!agente) {
-    console.warn(`empresa ${idEmpresa} sin agente configurado: el lienzo ${lienzo.id} no se entregará`);
-    return;
-  }
-
-  // upsert y no create: re-enviar el pedido de un lienzo ya entregado debe
-  // volver a ponerlo en cola, no reventar por la unique de lienzo_id.
-  await prisma.entregaLienzo.upsert({
-    where: { lienzo_id: lienzo.id },
-    create: { lienzo_id: lienzo.id, empresa_agente_id: agente.id },
-    update: {
-      empresa_agente_id: agente.id,
-      estado: "pendiente",
-      intentos: 0,
-      ultimo_error: null,
-      entregado_en: null,
-      purgado_en: null,
-    },
-  });
-
-  if (!lienzo.ruta_export) await encolarExportLienzo(lienzo.id);
-}
 
 function idEmpresaDeParam(req, res) {
   const idEmpresa = Number(req.params.idEmpresa);
@@ -61,12 +24,35 @@ function idEmpresaDeParam(req, res) {
   return idEmpresa;
 }
 
+// El catálogo real de Ninesys (es_servicio_de_impresion) puede traer
+// productos que no tienen sentido para armar un lienzo acá, y cada uno
+// puede tener varios tramos de precio por cantidad (ver ninesysApi.js) --
+// se filtra contra la curaduría del admin (routes/admin.js, tabla
+// servicios_ninesys_visibles) y se devuelve UN precio fijo por producto, ya
+// elegido de antemano: quien pide el presupuesto solo ve el nombre del
+// servicio, nunca tramos ni precios para elegir.
 ninesysRouter.get("/:idEmpresa/productos-impresion", async (req, res) => {
   const idEmpresa = idEmpresaDeParam(req, res);
   if (idEmpresa === null) return;
   try {
-    const productos = await getProductosImpresion(idEmpresa);
-    res.json({ productos });
+    const [productos, visibles] = await Promise.all([
+      getProductosImpresion(idEmpresa),
+      prisma.servicioNinesysVisible.findMany({ where: { id_empresa_ninesys: idEmpresa } }),
+    ]);
+    const visiblePorCod = new Map(visibles.map((v) => [v.cod, v]));
+    const servicios = productos
+      .map((p) => {
+        const visible = visiblePorCod.get(String(p.cod));
+        if (!visible) return null;
+        return {
+          cod: p.cod,
+          name: p.name,
+          categoria: p.categories?.[0]?.id ?? 0,
+          precio: Number(visible.precio),
+        };
+      })
+      .filter(Boolean);
+    res.json({ servicios });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
@@ -172,7 +158,7 @@ ninesysRouter.post("/:idEmpresa/presupuesto", async (req, res) => {
     // un fallo de entrega se resuelve después (igual que la notificación de
     // WhatsApp más abajo).
     try {
-      await encolarEntrega(lienzo, idEmpresa);
+      await encolarEntregaLienzo(lienzo, idEmpresa);
     } catch (err) {
       console.error(`no se pudo encolar la entrega del lienzo ${lienzo.id}:`, err.message);
     }

@@ -30,6 +30,12 @@ async function procesarQuitarFondo(imagen) {
     where: { id: imagen.id },
     data: {
       ruta_procesada,
+      // El resultado nuevo nunca viene upscaleado: cualquier upscale previo
+      // corría sobre una imagen distinta (el fondo de antes), invalidarlo
+      // acá evita que la tarjeta siga ofreciendo "deshacer" sobre un archivo
+      // que ya no tiene relación con la imagen actual.
+      ruta_pre_upscale: null,
+      estado_upscale: "omitido",
       ancho_px: meta.width,
       alto_px: meta.height,
       estado_fondo: "listo",
@@ -45,6 +51,9 @@ async function procesarUpscale(imagen) {
   await prisma.imagen.update({
     where: { id: imagen.id },
     data: {
+      // Guarda el archivo de ANTES del upscale para poder deshacerlo (ver
+      // POST /imagenes/:id/revertir-upscale) si el resultado sale mal.
+      ruta_pre_upscale: imagen.ruta_procesada ?? imagen.ruta_original,
       ruta_procesada,
       ancho_px: meta.width,
       alto_px: meta.height,

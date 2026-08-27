@@ -17,7 +17,7 @@ packages/
 ## Primer setup local (Mac)
 
 ```bash
-brew install mysql redis python@3.12
+brew install mysql redis python@3.12 poppler
 brew services start mysql redis
 
 npm install                              # workspaces JS (raíz)

@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { requireAuth, requireAdmin, hashPassword } from "../lib/auth.js";
 import { procesosHoy } from "../lib/limites.js";
 import { generarToken, hashToken } from "../lib/agenteToken.js";
+import { getProductosImpresion } from "../lib/ninesysApi.js";
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -128,4 +129,77 @@ adminRouter.patch("/agentes/:id", async (req, res) => {
   if (!agente) return res.status(404).json({ error: "Agente no encontrado" });
   const { token_hash, ...resto } = agente;
   res.json({ ...resto, tiene_token: Boolean(token_hash) });
+});
+
+// --- Curaduría del catálogo de servicios de Ninesys (por empresa) ---
+//
+// GET /products de Ninesys ya viene filtrado por es_servicio_de_impresion,
+// pero esa marca la controla cada empresa desde SU panel, no esta app --
+// puede traer productos que no tienen sentido para un lienzo. Acá se cruza
+// el catálogo en vivo con la tabla de visibilidad (ver schema.prisma) para
+// que el admin decida cuáles llegan al selector de servicio del pedido.
+
+adminRouter.get("/servicios/:idEmpresa", async (req, res) => {
+  const idEmpresa = Number(req.params.idEmpresa);
+  if (!Number.isInteger(idEmpresa) || idEmpresa <= 0) {
+    return res.status(400).json({ error: "idEmpresa inválido" });
+  }
+  try {
+    const [productos, visibles] = await Promise.all([
+      getProductosImpresion(idEmpresa),
+      prisma.servicioNinesysVisible.findMany({ where: { id_empresa_ninesys: idEmpresa } }),
+    ]);
+    const visiblePorCod = new Map(visibles.map((v) => [v.cod, v]));
+    res.json({
+      servicios: productos.map((p) => {
+        const cod = String(p.cod);
+        const actual = visiblePorCod.get(cod);
+        // regular_price viene siempre en 0 en este catálogo -- el precio
+        // real vive en products_prices, sin min/max estructurado (varios
+        // tramos por cantidad, ej. "x1"/"X6"/"x 12" o "entre 1 y 9"). El
+        // admin elige acá UNA vez cuál tramo usar; el pedido nunca se lo
+        // muestra a quien pide el presupuesto, solo el nombre.
+        const tramos = (p.prices?.length ? p.prices : [{ id: "unico", price: p.regular_price ?? 0, description: "" }]).map(
+          (t) => ({ id: t.id, precio: Number(t.price), descripcion: t.description || null })
+        );
+        return {
+          cod,
+          name: p.name,
+          categoria: p.categories?.[0]?.id ?? 0,
+          visible: Boolean(actual),
+          precio: actual ? Number(actual.precio) : null,
+          tramos,
+        };
+      }),
+    });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// Marca un producto visible en el selector del pedido con un precio fijo
+// (elegido por el admin entre los tramos de Ninesys), o lo oculta.
+adminRouter.put("/servicios/:idEmpresa/:cod", async (req, res) => {
+  const idEmpresa = Number(req.params.idEmpresa);
+  const cod = String(req.params.cod);
+  if (!Number.isInteger(idEmpresa) || idEmpresa <= 0) {
+    return res.status(400).json({ error: "idEmpresa inválido" });
+  }
+  const visible = Boolean(req.body?.visible);
+  if (visible) {
+    const precio = Number(req.body?.precio);
+    if (!Number.isFinite(precio) || precio <= 0) {
+      return res.status(400).json({ error: "Falta un precio válido para mostrar este servicio" });
+    }
+    await prisma.servicioNinesysVisible.upsert({
+      where: { id_empresa_ninesys_cod: { id_empresa_ninesys: idEmpresa, cod } },
+      create: { id_empresa_ninesys: idEmpresa, cod, precio },
+      update: { precio },
+    });
+    return res.json({ cod, visible, precio });
+  }
+  await prisma.servicioNinesysVisible
+    .delete({ where: { id_empresa_ninesys_cod: { id_empresa_ninesys: idEmpresa, cod } } })
+    .catch(() => null); // ya no estaba visible: no es un error
+  res.json({ cod, visible, precio: null });
 });
