@@ -20,19 +20,24 @@ const lienzoForm = ref({ tipo: "dtf", ancho_mm: 280, margen_mm: 5, formato_expor
 
 const imgs = useImagenes(props.id, () => limiteAnchoUtilMm(lienzoForm.value.ancho_mm, lienzoForm.value.margen_mm));
 
+// Las imágenes SIEMPRE se leen de imgs.imagenes (la fuente reactiva), nunca
+// de proyecto.imagenes: subir un archivo o tocar un switch actualiza el
+// composable por dentro, pero `proyecto` es una copia congelada del último
+// GET y se quedaría vieja hasta recargar la página entera.
 const imagenesListas = computed(
-  () => proyecto.value?.imagenes.filter((i) => i.estado_fondo === "listo" && i.ancho_mm && i.alto_mm) ?? []
+  () => imgs.imagenes.value?.filter((i) => i.estado_fondo === "listo" && i.ancho_mm && i.alto_mm) ?? []
 );
 const hayProcesando = computed(() =>
-  proyecto.value?.imagenes.some((i) => i.estado_fondo === "pendiente" || i.estado_fondo === "procesando" || i.estado_upscale === "procesando")
+  imgs.imagenes.value?.some((i) => i.estado_fondo === "pendiente" || i.estado_fondo === "procesando" || i.estado_upscale === "procesando")
 );
 const erroresGeneracion = computed(() =>
-  validarParaAcomodar(proyecto.value?.imagenes ?? [], lienzoForm.value.ancho_mm, lienzoForm.value.margen_mm)
+  validarParaAcomodar(imgs.imagenes.value ?? [], lienzoForm.value.ancho_mm, lienzoForm.value.margen_mm)
 );
 
 async function cargar() {
   // imgs.cargar() ya trae el proyecto completo (imágenes + lienzos) --
-  // reusarlo tal cual evita un segundo GET redundante.
+  // reusarlo tal cual evita un segundo GET redundante. De acá solo se usan
+  // `nombre` y `lienzos`; las imágenes salen de imgs.imagenes.
   proyecto.value = await imgs.cargar();
 }
 
@@ -80,7 +85,7 @@ onUnmounted(() => clearInterval(intervalo));
       <CargaImagenes :proyecto-id="props.id" :store="imgs" />
 
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <TarjetaImagen v-for="img in proyecto.imagenes" :key="img.id" :img="img" :store="imgs" />
+        <TarjetaImagen v-for="img in imgs.imagenes.value" :key="img.id" :img="img" :store="imgs" />
       </div>
     </section>
 
