@@ -379,7 +379,7 @@ onUnmounted(() => clearInterval(intervaloFondo));
       </v-stage>
     </div>
 
-    <EstadoEntrega :entrega="lienzo.entrega" :ahora="ahora" />
+    <EstadoEntrega :entrega="lienzo.entrega" :ahora="ahora" :lienzo-id="props.id" @reenviado="refrescarEntrega" />
 
     <PedidoWhatsApp :lienzo="lienzo" />
   </div>

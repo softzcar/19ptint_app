@@ -1,5 +1,6 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { api } from "../lib/api.js";
 
 /**
  * Estado de la entrega del lienzo a la PC de producción de la empresa.
@@ -11,7 +12,28 @@ import { computed } from "vue";
 const props = defineProps({
   entrega: { type: Object, default: null },
   ahora: { type: Number, required: true },
+  // Necesario para poder reenviar. Se recibe como prop (y no se saca de la
+  // ruta) para que el componente siga siendo independiente de dónde se use.
+  lienzoId: { type: [String, Number], default: null },
 });
+
+const emit = defineEmits(["reenviado"]);
+
+const reenviando = ref(false);
+const errorReenvio = ref("");
+
+async function reenviar() {
+  reenviando.value = true;
+  errorReenvio.value = "";
+  try {
+    await api.post(`/lienzos/${props.lienzoId}/reenviar`);
+    emit("reenviado");
+  } catch (e) {
+    errorReenvio.value = e.response?.data?.error ?? "No se pudo volver a enviar";
+  } finally {
+    reenviando.value = false;
+  }
+}
 
 // Mismo margen que usa el panel de admin: 3 sondeos del agente (20s) antes de
 // darlo por desconectado, para no alarmar por un hipo de red.
@@ -101,9 +123,22 @@ const ESTILOS = {
 <template>
   <div v-if="vista" class="rounded-lg border px-3.5 py-2.5 flex gap-2.5 items-start" :class="ESTILOS[vista.tono]">
     <span class="font-bold leading-5">{{ vista.icono }}</span>
-    <div class="text-sm">
+    <div class="text-sm flex-1">
       <p class="font-semibold">{{ vista.titulo }}</p>
       <p class="text-xs opacity-80 mt-0.5">{{ vista.detalle }}</p>
+      <p v-if="errorReenvio" class="text-xs text-red-700 mt-1 font-medium">{{ errorReenvio }}</p>
     </div>
+
+    <!-- Solo sobre entregas ya confirmadas: mientras está en cola o con error
+         el agente ya lo reintenta solo, y ofrecer el botón ahí confundiría. -->
+    <button
+      v-if="entrega?.estado === 'entregado' && lienzoId"
+      class="text-xs font-semibold underline underline-offset-2 opacity-75 hover:opacity-100 transition-opacity whitespace-nowrap disabled:opacity-40"
+      :disabled="reenviando"
+      title="Si el archivo se perdió o se dañó en la PC, volvé a mandarlo"
+      @click="reenviar"
+    >
+      {{ reenviando ? "Enviando…" : "Volver a enviar" }}
+    </button>
   </div>
 </template>
