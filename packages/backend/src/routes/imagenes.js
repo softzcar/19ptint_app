@@ -33,11 +33,43 @@ const MAX_MEGAPIXELES_DECODE = 200;
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
 
+// Formatos que un navegador puede mostrar tal cual en un <img>. Todo lo que
+// no esté acá (TIFF, BMP, HEIC de iPhone...) se convierte a PNG al entrar:
+// si no, el archivo se guarda bien pero después no hay forma de previsualizarlo.
+export const MIME_POR_EXT = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".avif": "image/avif",
+};
+
 /**
- * Deja la imagen dentro de límites seguros. En vez de rechazar (que es lo que
- * hacía antes y bloqueaba trabajos legítimos), la reduce conservando la
- * proporción: por encima de estos tamaños los píxeles sobrantes no aportan
- * nada imprimible -- el acomodo igual capa el ancho al del lienzo.
+ * Formato de salida servible para el navegador, o null si hay que convertir.
+ * sharp reporta AVIF y HEIC ambos como "heif": se distinguen por el códec
+ * (av1 = AVIF, que los navegadores modernos sí muestran; hevc = HEIC de
+ * iPhone, que no).
+ */
+function formatoServible(meta) {
+  if (meta.format === "png") return { ext: ".png", mime: "image/png" };
+  if (meta.format === "jpeg") return { ext: ".jpg", mime: "image/jpeg" };
+  if (meta.format === "webp") return { ext: ".webp", mime: "image/webp" };
+  if (meta.format === "gif") return { ext: ".gif", mime: "image/gif" };
+  if (meta.format === "heif" && meta.compression === "av1") return { ext: ".avif", mime: "image/avif" };
+  return null;
+}
+
+/**
+ * Deja la imagen dentro de límites seguros y en un formato que el navegador
+ * pueda mostrar. En vez de rechazar por tamaño (que es lo que hacía antes y
+ * bloqueaba trabajos legítimos), la reduce conservando la proporción: por
+ * encima de estos tamaños los píxeles sobrantes no aportan nada imprimible
+ * -- el acomodo igual capa el ancho al del lienzo.
+ *
+ * Devuelve también `ext`, que pasa a ser la fuente de verdad del formato
+ * real del archivo guardado (antes se usaba la extensión del nombre subido,
+ * que puede mentir, y el archivo se servía siempre como image/png).
  */
 async function normalizarEntrada(buffer, nombreOriginal) {
   const meta = await sharp(buffer, { limitInputPixels: MAX_MEGAPIXELES_DECODE * 1e6 })
@@ -53,28 +85,44 @@ async function normalizarEntrada(buffer, nombreOriginal) {
   if (!ancho || !alto) throw new Error(`${nombreOriginal}: no se pudo leer el tamaño de la imagen`);
 
   const megapixeles = (ancho * alto) / 1e6;
-  if (ancho <= MAX_LADO_PX && alto <= MAX_LADO_PX && megapixeles <= MAX_MEGAPIXELES) {
-    return { buffer, metadata: meta };
+  const cabeEnLimites = ancho <= MAX_LADO_PX && alto <= MAX_LADO_PX && megapixeles <= MAX_MEGAPIXELES;
+  const servible = formatoServible(meta);
+
+  // Caso feliz: entra tal cual y el navegador sabe mostrarlo -> no se toca ni
+  // un byte (re-encodear degradaría la imagen sin ninguna necesidad).
+  if (cabeEnLimites && servible) {
+    return { buffer, metadata: meta, ext: servible.ext };
   }
 
-  // Se aplica el factor más restrictivo entre el del lado y el del área.
-  const factor = Math.min(
-    MAX_LADO_PX / ancho,
-    MAX_LADO_PX / alto,
-    Math.sqrt(MAX_MEGAPIXELES / megapixeles),
-    1
-  );
-  const nuevoAncho = Math.max(1, Math.round(ancho * factor));
-  const nuevoAlto = Math.max(1, Math.round(alto * factor));
+  let pipeline = sharp(buffer, { limitInputPixels: MAX_MEGAPIXELES_DECODE * 1e6 });
 
-  const reducido = await sharp(buffer, { limitInputPixels: MAX_MEGAPIXELES_DECODE * 1e6 })
-    .resize(nuevoAncho, nuevoAlto, { fit: "inside" })
-    .toBuffer();
+  if (!cabeEnLimites) {
+    // Se aplica el factor más restrictivo entre el del lado y el del área.
+    const factor = Math.min(
+      MAX_LADO_PX / ancho,
+      MAX_LADO_PX / alto,
+      Math.sqrt(MAX_MEGAPIXELES / megapixeles),
+      1
+    );
+    const nuevoAncho = Math.max(1, Math.round(ancho * factor));
+    const nuevoAlto = Math.max(1, Math.round(alto * factor));
+    pipeline = pipeline.resize(nuevoAncho, nuevoAlto, { fit: "inside" });
+    console.log(
+      `[imagenes] ${nombreOriginal}: ${ancho}x${alto} (${megapixeles.toFixed(1)}MP) reducida a ${nuevoAncho}x${nuevoAlto}`
+    );
+  }
 
-  console.log(
-    `[imagenes] ${nombreOriginal}: ${ancho}x${alto} (${megapixeles.toFixed(1)}MP) reducida a ${nuevoAncho}x${nuevoAlto}`
-  );
-  return { buffer: reducido, metadata: await sharp(reducido).metadata() };
+  // Al re-encodear se elige un formato explícito y no el de entrada: sharp
+  // puede LEER formatos que no sabe escribir (ej. AVIF sin encoder), así que
+  // dejarlo implícito rompería. JPEG se mantiene para no inflar fotos; todo
+  // lo demás sale PNG, que es sin pérdida y lo muestra cualquier navegador.
+  const salida = meta.format === "jpeg" ? { ext: ".jpg", aplicar: (p) => p.jpeg({ quality: 95 }) } : { ext: ".png", aplicar: (p) => p.png() };
+  if (!servible) {
+    console.log(`[imagenes] ${nombreOriginal}: formato ${meta.format} no se puede mostrar en el navegador, se convierte a ${salida.ext}`);
+  }
+
+  const procesado = await salida.aplicar(pipeline).toBuffer();
+  return { buffer: procesado, metadata: await sharp(procesado).metadata(), ext: salida.ext };
 }
 
 // Crea la imagen tal cual se subió (con su fondo original, sin pasar por la
@@ -82,8 +130,10 @@ async function normalizarEntrada(buffer, nombreOriginal) {
 // manual como de la búsqueda web. El quitado de fondo ahora es opcional: se
 // dispara solo si el usuario prende el switch (POST /imagenes/:id/quitar-fondo).
 async function crearImagenDesdeBuffer(proyectoId, bufferEntrada, nombreOriginal) {
-  const { buffer, metadata } = await normalizarEntrada(bufferEntrada, nombreOriginal);
-  const ext = path.extname(nombreOriginal) || `.${metadata.format ?? "jpg"}`;
+  // La extensión sale del formato REAL detectado, no del nombre que subió el
+  // usuario: ese puede mentir, y de esa extensión depende con qué
+  // Content-Type se sirve después el archivo.
+  const { buffer, metadata, ext } = await normalizarEntrada(bufferEntrada, nombreOriginal);
   const ruta_original = await guardar("originales", buffer, ext);
   return prisma.imagen.create({
     data: {
@@ -320,9 +370,15 @@ imagenesRouter.get("/imagenes/:id/archivo", cargarImagenPropia, async (req, res)
   const ruta = variante === "original" ? req.imagen.ruta_original : req.imagen.ruta_procesada;
   if (!ruta) return res.status(404).json({ error: "Archivo no disponible todavía" });
   const buffer = await leer(ruta);
+  // El Content-Type sale del formato REAL del archivo, no fijo en image/png.
+  // Estaba hardcodeado y el original se guarda en su formato de origen: al
+  // subir un AVIF/WebP se servían esos bytes declarados como PNG, y el
+  // navegador no los podía mostrar (con blob: confía en el tipo declarado, no
+  // lo deduce de los bytes) -- la imagen quedaba en negro.
+  const mime = MIME_POR_EXT[path.extname(ruta).toLowerCase()] ?? "image/png";
   // La URL no cambia aunque ruta_procesada sí (revertir/quitar fondo,
   // upscale): sin esto, el caché de LiteSpeed (module cache del vhost, por
   // tipo MIME) y el del propio navegador sirven la versión vieja por días
   // aunque el archivo real ya haya cambiado.
-  res.set("Content-Type", "image/png").set("Cache-Control", "no-store").send(buffer);
+  res.set("Content-Type", mime).set("Cache-Control", "no-store").send(buffer);
 });
