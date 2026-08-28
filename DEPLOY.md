@@ -26,7 +26,7 @@ sea lento al inicio".
 ```bash
 sudo apt update
 sudo apt install -y nginx mysql-server redis-server git build-essential \
-  curl unzip python3.12 python3.12-venv mesa-vulkan-drivers vulkan-tools
+  curl unzip python3.12 python3.12-venv mesa-vulkan-drivers vulkan-tools poppler-utils
 
 # Node 20+ (nodesource)
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
@@ -196,7 +196,12 @@ server {
     listen 80;
     server_name tu-dominio.com;
 
-    client_max_body_size 30M;
+    # 2048M por los lienzos ya armados subidos directo (routes/lienzos.js
+    # POST /lienzos/subir-listo): sin tope de tamaño a propósito, se
+    # descargan tal cual en la PC de producción, nunca se procesan acá. El
+    # resto de las subidas (imágenes de proyecto) igual quedan cubiertas por
+    # su propio límite de multer (100MB), más chico.
+    client_max_body_size 2048M;
 
     root /opt/19print-app/packages/frontend/dist;
     index index.html;
@@ -209,6 +214,16 @@ server {
         proxy_pass http://127.0.0.1:4000/api/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+        # Subidas grandes en conexiones lentas (VPS, no siempre buena
+        # conectividad del lado del usuario): el timeout default de nginx
+        # (60s) corta la subida a mitad de camino antes de que termine.
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        # No bufferear el body completo en nginx antes de mandarlo a Node:
+        # para un archivo de cientos de MB, evita duplicar ese uso de disco
+        # y que el upload no arranque a fluir hasta que nginx lo termine de
+        # recibir entero.
+        proxy_request_buffering off;
     }
 }
 ```

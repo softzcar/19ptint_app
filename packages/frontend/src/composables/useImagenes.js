@@ -33,7 +33,7 @@ export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
   const proporcionBloqueada = ref({});
   const alturasInicializadas = new Set();
 
-  const modoCarga = ref("subir"); // 'subir' | 'buscar' | 'texto'
+  const modoCarga = ref("subir"); // 'subir' | 'buscar' | 'texto' | 'listo'
   const busqueda = ref("");
   const buscando = ref(false);
   const busquedaError = ref("");
@@ -143,7 +143,9 @@ export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
   // vez de dispararle el evento a la app -- por eso hacía falta este handler.
   function onDropArchivos(event) {
     arrastrandoArchivo.value = false;
-    const archivos = Array.from(event.dataTransfer?.files ?? []).filter((f) => f.type.startsWith("image/"));
+    const archivos = Array.from(event.dataTransfer?.files ?? []).filter(
+      (f) => f.type.startsWith("image/") || f.type === "application/pdf"
+    );
     subirArchivosDesde(archivos);
   }
 
@@ -228,6 +230,18 @@ export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
     await cargar();
   }
 
+  // Deshace el último upscale (sea client-side o el legacy del VPS): vuelve
+  // a la versión de justo antes sin gastar cuota ni volver a llamar a la IA.
+  // Pensado para cuando el resultado sale mal (ver lib/upscaleCliente.js).
+  async function revertirUpscale(img) {
+    try {
+      await api.post(`/imagenes/${img.id}/revertir-upscale`);
+      await cargar();
+    } catch (e) {
+      error.value = e.response?.data?.error ?? "No se pudo deshacer el aumento de resolución";
+    }
+  }
+
   async function eliminarImagen(img) {
     await api.delete(`/imagenes/${img.id}`);
     await cargar();
@@ -294,6 +308,7 @@ export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
     toggleProporcion,
     actualizarCopias,
     pedirUpscale,
+    revertirUpscale,
     eliminarImagen,
     mantenerFondo,
     quitarFondo,
@@ -308,8 +323,9 @@ export function limiteAnchoUtilMm(anchoLienzoMm, margenMm) {
 
 /**
  * Chequeo previo a "Auto-acomodar"/"Volver a acomodar": una imagen con fondo
- * listo pero sin ancho/alto, sin copias (nace en 0 a propósito, ver
- * schema.prisma) o más ancha que lo que entra en el lienzo quedaría
+ * listo pero sin ancho/alto, con copias en 0 (nace en 1, pero el usuario
+ * puede bajarla a 0 -- ver schema.prisma) o más ancha que lo que entra en el
+ * lienzo quedaría
  * silenciosamente afuera del acomodo (o el backend la rechazaría con un
  * error genérico) -- mejor avisar antes, imagen por imagen.
  *

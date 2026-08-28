@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from "vue";
+import { ref, watch, onMounted } from "vue";
 import { api } from "../../lib/api.js";
 import { useAuthStore } from "../../stores/auth.js";
 
@@ -11,6 +11,27 @@ const texto = ref("");
 const resultados = ref([]);
 const buscando = ref(false);
 let debounceTimer = null;
+
+// Antes de mostrar la búsqueda manual, se intenta enlazar directo con el
+// cliente de Ninesys de esta cuenta (ver ninesys.js /clientes/auto -- se
+// matchea por cédula, no por email: Ninesys no indexa email en su búsqueda)
+// -- si hay exactamente uno, se salta el paso de buscar y el usuario solo
+// confirma los datos. Si no hay match (o el backend lo descarta por
+// ambiguo), sigue el flujo de siempre sin que se note que se intentó.
+const verificandoAuto = ref(true);
+onMounted(async () => {
+  try {
+    const { data } = await api.get(`/ninesys/${props.idEmpresa}/clientes/auto`);
+    if (data.cliente) {
+      elegirExistente(data.cliente);
+      return;
+    }
+  } catch {
+    // silencioso -- si falla, el usuario busca a mano como siempre
+  } finally {
+    verificandoAuto.value = false;
+  }
+});
 
 const form = ref(vacio());
 const editando = ref(false);
@@ -105,7 +126,9 @@ function usarClienteDuplicado() {
   <div class="space-y-3">
     <p class="text-sm text-np-ink/60">Cliente</p>
 
-    <template v-if="!editando">
+    <p v-if="verificandoAuto" class="text-sm text-np-ink/40">Verificando cliente…</p>
+
+    <template v-else-if="!editando">
       <input
         v-model="texto"
         type="text"

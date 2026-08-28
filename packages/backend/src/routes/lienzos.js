@@ -1,10 +1,15 @@
 import { Router } from "express";
+import multer from "multer";
+import path from "node:path";
+import { unlink } from "node:fs/promises";
+import sharp from "sharp";
 import { prisma } from "../db.js";
 import { requireAuth } from "../lib/auth.js";
 import { cargarProyecto } from "./proyectos.js";
 import { calcularAcomodo } from "../lib/packing.js";
 import { exportarLienzo } from "../lib/exportarLienzo.js";
-import { leer, borrar } from "../lib/storage.js";
+import { leer, borrar, guardarDesdeArchivo } from "../lib/storage.js";
+import { pdfDimensionesMM } from "../lib/pdf.js";
 
 export const lienzosRouter = Router();
 lienzosRouter.use(requireAuth);
@@ -105,6 +110,10 @@ lienzosRouter.post("/proyectos/:id/lienzos", cargarProyecto, async (req, res) =>
 
 async function cargarLienzoPropio(req, res, next) {
   const id = Number(req.params.id);
+  // Un id no numérico (ej. una ruta vieja que ya no existe cayendo acá por
+  // matchear /lienzos/:id) no es "no encontrado" para Prisma, es un error de
+  // tipo que tumba el proceso entero -- se corta acá, antes de la query.
+  if (!Number.isInteger(id)) return res.status(404).json({ error: "Lienzo no encontrado" });
   const lienzo = await prisma.lienzo.findFirst({
     where: { id, proyecto: req.rol === "admin" ? {} : { usuario_id: req.usuarioId } },
     include: {
@@ -267,3 +276,116 @@ lienzosRouter.get("/lienzos/:id/descargar", cargarLienzoPropio, async (req, res)
   res.set("Cache-Control", "no-store");
   res.send(buffer);
 });
+
+// --- Lienzo ya armado, subido directo ---
+//
+// Cuarta pestaña de carga del proyecto (junto a Subir archivo/Buscar en
+// internet/Crear texto, ver CargaImagenes.vue): para un diseño ya maquetado
+// afuera de esta app -- el archivo subido ES el diseño final, no pasa por
+// imágenes ni por el motor de acomodo. Se cuelga del proyecto actual, no de
+// uno nuevo: qué empresa y qué servicio (y por lo tanto la entrega a la PC
+// de producción) se deciden después, en el mismo "Pedir presupuesto" que ya
+// usa cualquier otro lienzo (ver PedidoWhatsApp.vue / routes/ninesys.js) --
+// acá solo hace falta el archivo y el tipo.
+//
+// diskStorage (no memoryStorage) a propósito: estos archivos no tienen tope
+// de tamaño ("cualquier tamaño sin restricciones" -- se van a descargar tal
+// cual en la PC de producción, nunca se decodifican ni se procesan acá).
+// Cargar uno grande entero a un Buffer en memoria arriesgaría el VPS igual
+// que decodificarlo (ver el incidente de CONTEXTO.md §14).
+const uploadLienzoListo = multer({
+  storage: multer.diskStorage({}), // sin `destination`: cae al os.tmpdir() del sistema
+  limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2GB: backstop técnico, no un límite de negocio
+});
+
+lienzosRouter.post(
+  "/proyectos/:id/lienzos/subir-listo",
+  cargarProyecto,
+  uploadLienzoListo.single("archivo"),
+  async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "No se recibió ningún archivo" });
+
+    const limpiarTemporal = () => unlink(req.file.path).catch(() => {});
+
+    const { tipo, tela } = req.body ?? {};
+
+    if (!["dtf", "sublimacion"].includes(tipo)) {
+      await limpiarTemporal();
+      return res.status(400).json({ error: "tipo debe ser 'dtf' o 'sublimacion'" });
+    }
+
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const formato_exportacion = { ".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg", ".pdf": "pdf" }[ext];
+    if (!formato_exportacion) {
+      await limpiarTemporal();
+      return res.status(400).json({ error: "Formato no soportado: subí un PNG, JPEG o PDF." });
+    }
+    // Mismo emparejamiento tipo/formato que el resto de la app (CONTEXTO.md
+    // §2/§4): el software de la impresora de cada tipo espera un formato
+    // puntual, no cualquiera de los tres.
+    if (!FORMATOS_VALIDOS[tipo].includes(formato_exportacion)) {
+      await limpiarTemporal();
+      return res.status(400).json({
+        error: `Para ${tipo} el archivo debe ser ${FORMATOS_VALIDOS[tipo].join(" o ").toUpperCase()}.`,
+      });
+    }
+
+    // Best-effort, nunca bloquea la subida: alto_usado_mm es lo que
+    // PedidoWhatsApp.vue usa para calcular los metros de largo a facturar
+    // (cantidadMetros = alto_usado_mm / 1000), así que vale la pena, pero
+    // sin esto igual se puede pedir presupuesto -- el campo queda null.
+    //
+    // Solo para este camino (lienzo ya armado, subido tal cual): a diferencia
+    // del motor de acomodo, que calcula el largo exacto de lo que él mismo
+    // empaquetó, acá el archivo viene de afuera y no hay margen de maniobra
+    // -- se suma un 3% al largo para cubrir la pérdida de material habitual
+    // al trabajarlo (alineación, recorte) en vez de cobrar el metraje exacto
+    // del archivo y quedarse corto.
+    const MARGEN_DESPERDICIO = 1.03;
+    let ancho_mm = 0;
+    let alto_usado_mm = null;
+    try {
+      // PDF (sublimación) no pasa por sharp -- los binarios de libvips que
+      // trae npm no incluyen soporte PDF -- se lee el tamaño de página con
+      // pdfinfo (poppler), sin rasterizar nada. Ambos leen desde el archivo
+      // en disco (no lo cargan entero a memoria), así que es seguro aunque
+      // el archivo sea enorme.
+      if (formato_exportacion === "pdf") {
+        const { anchoMM, altoMM } = await pdfDimensionesMM(req.file.path);
+        ancho_mm = Math.round(anchoMM);
+        alto_usado_mm = Math.round(altoMM * MARGEN_DESPERDICIO);
+      } else {
+        const meta = await sharp(req.file.path).metadata();
+        if (meta.width) ancho_mm = Math.round((meta.width / 300) * 25.4);
+        if (meta.height) alto_usado_mm = Math.round((meta.height / 300) * 25.4 * MARGEN_DESPERDICIO);
+      }
+    } catch (err) {
+      // Archivo fuera de lo común (ej. un PDF sin página, o corrupto): se
+      // guarda igual, sin dimensiones de referencia -- nunca bloquea la
+      // subida, pero queda logueado para poder investigar si pasa seguido.
+      console.warn(`[lienzos] no se pudo calcular el tamaño de ${req.file.originalname}:`, err.message);
+    }
+
+    try {
+      const ruta_export = await guardarDesdeArchivo("exports", req.file.path, ext);
+      const lienzo = await prisma.lienzo.create({
+        data: {
+          proyecto_id: req.proyecto.id,
+          tipo,
+          ancho_mm,
+          alto_usado_mm,
+          formato_exportacion,
+          ruta_export,
+          // Solo aplica a sublimación (DTF no lleva este detalle) -- se
+          // ignora en silencio si viene en un lienzo DTF en vez de rechazar,
+          // total no se usa para nada del lado de DTF.
+          tela: tipo === "sublimacion" && tela?.trim() ? tela.trim() : null,
+        },
+      });
+      res.status(201).json(lienzo);
+    } catch (err) {
+      await limpiarTemporal();
+      res.status(500).json({ error: err.message });
+    }
+  }
+);

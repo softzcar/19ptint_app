@@ -8,9 +8,10 @@ export function calcularAcomodo({ canvasAncho, tipo, margen, imagenes }) {
     nombre: img.nombre_original ?? `#${img.id}`,
     anchoMM: N(img.ancho_mm),
     altoMM: N(img.alto_mm),
-    // A diferencia del resto de la app, acá NO se cae a 1 por defecto: nace
-    // en 0 a propósito (schema.prisma) para obligar al usuario a confirmar
-    // la cantidad antes de generar -- se valida explícito más abajo.
+    // A diferencia del resto de la app (packing-engine cae a 1 por defecto),
+    // acá NO: un copias null/undefined cae a 0, que la validación de abajo
+    // rechaza explícito -- nunca se empaqueta una imagen sin que su cantidad
+    // haya quedado clara, aunque el valor de fábrica en schema.prisma sea 1.
     copias: img.copias ?? 0,
   }));
 

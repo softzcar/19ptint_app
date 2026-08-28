@@ -124,10 +124,24 @@ function piezas() {
 }
 const piezasRender = ref([]);
 
+// Lienzo sin items (subido directo ya armado, ver routes/lienzos.js POST
+// /lienzos/subir-listo): no hay piezas que dibujar en el canvas de Konva
+// (no vino de acomodar imágenes), así que se muestra el archivo final tal
+// cual en vez del canvas vacío.
+const previewUrlDirecto = ref(null);
+
 async function cargar() {
   const { data } = await api.get(`/lienzos/${props.id}`);
   lienzo.value = data;
   proyectoIdRef.value = data.proyecto_id;
+
+  if (!data.items.length) {
+    if (["png", "jpeg"].includes(data.formato_exportacion)) {
+      const resp = await api.get(`/lienzos/${props.id}/descargar`, { responseType: "blob" });
+      previewUrlDirecto.value = URL.createObjectURL(resp.data);
+    }
+    return;
+  }
 
   // imgs.cargar() trae el proyecto completo (todas sus imágenes, con
   // preview autenticado y controles de alto/ancho/copias ya inicializados)
@@ -177,7 +191,11 @@ async function exportar() {
   exportando.value = true;
   error.value = "";
   try {
-    await api.post(`/lienzos/${props.id}/exportar`);
+    // Un lienzo subido ya armado (sin items) no tiene nada para
+    // re-renderizar -- el archivo subido YA es el export, así que este botón
+    // solo lo descarga (ver exportarLienzo.js, que rechaza re-exportar algo
+    // sin piezas acomodadas).
+    if (lienzo.value.items.length) await api.post(`/lienzos/${props.id}/exportar`);
     const resp = await api.get(`/lienzos/${props.id}/descargar`, { responseType: "blob" });
     const ext = lienzo.value.formato_exportacion === "pdf" ? "pdf" : lienzo.value.formato_exportacion === "jpeg" ? "jpeg" : "png";
     const url = URL.createObjectURL(resp.data);
@@ -245,6 +263,7 @@ onUnmounted(() => clearInterval(intervaloFondo));
       </h1>
       <div class="flex items-center gap-2">
         <button
+          v-if="lienzo.items.length"
           class="border border-black/10 hover:border-np-teal/40 text-np-ink/70 hover:text-np-teal text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           @click="abrirEdicion"
         >
@@ -255,13 +274,18 @@ onUnmounted(() => clearInterval(intervaloFondo));
           :disabled="exportando"
           @click="exportar"
         >
-          {{ exportando ? "Exportando..." : `Exportar ${lienzo.formato_exportacion.toUpperCase()}` }}
+          {{
+            exportando
+              ? "Descargando..."
+              : `${lienzo.items.length ? "Exportar" : "Descargar"} ${lienzo.formato_exportacion.toUpperCase()}`
+          }}
         </button>
         <button class="text-red-600/70 hover:text-red-600 text-sm transition-colors" @click="eliminarLienzo">Eliminar lienzo</button>
       </div>
     </div>
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-    <p class="text-xs text-np-ink/40">Arrastrá las piezas para ajustar manualmente el acomodo.</p>
+    <p v-if="lienzo.items.length" class="text-xs text-np-ink/40">Arrastrá las piezas para ajustar manualmente el acomodo.</p>
+    <p v-else class="text-xs text-np-ink/40">Lienzo subido ya armado -- sin piezas para reacomodar.</p>
 
     <section v-if="editando" class="bg-white rounded-xl border border-black/5 shadow-sm p-5 sm:p-6 space-y-4">
       <h2 class="text-xs font-bold uppercase tracking-wide text-np-ink/50">Re-acomodar</h2>
@@ -301,7 +325,7 @@ onUnmounted(() => clearInterval(intervaloFondo));
 
       <div>
         <p class="text-sm font-medium text-np-ink/70 mb-1.5">Agregar imágenes nuevas</p>
-        <CargaImagenes :proyecto-id="proyectoIdRef" :store="imgs" />
+        <CargaImagenes :proyecto-id="proyectoIdRef" :store="imgs" @agregados="cargar" />
       </div>
 
       <div>
@@ -354,7 +378,7 @@ onUnmounted(() => clearInterval(intervaloFondo));
       </ul>
     </section>
 
-    <div class="bg-white rounded-xl border border-black/5 shadow-sm p-2 overflow-auto">
+    <div v-if="lienzo.items.length" class="bg-white rounded-xl border border-black/5 shadow-sm p-2 overflow-auto">
       <v-stage :config="{ width: anchoPx, height: altoPx }">
         <v-layer>
           <v-rect :config="{ x: 0, y: 0, width: anchoPx, height: altoPx, fill: '#F5F5F2', stroke: '#E1F5EE' }" />
@@ -378,9 +402,15 @@ onUnmounted(() => clearInterval(intervaloFondo));
         </v-layer>
       </v-stage>
     </div>
+    <div v-else class="bg-white rounded-xl border border-black/5 shadow-sm p-4">
+      <img v-if="previewUrlDirecto" :src="previewUrlDirecto" class="max-w-full max-h-[70vh] mx-auto" />
+      <p v-else class="text-sm text-np-ink/50 text-center py-8">
+        Sin vista previa para PDF -- usá "Exportar {{ lienzo.formato_exportacion.toUpperCase() }}" para verlo.
+      </p>
+    </div>
 
     <EstadoEntrega :entrega="lienzo.entrega" :ahora="ahora" :lienzo-id="props.id" @reenviado="refrescarEntrega" />
 
-    <PedidoWhatsApp :lienzo="lienzo" />
+    <PedidoWhatsApp :lienzos="[lienzo]" />
   </div>
 </template>

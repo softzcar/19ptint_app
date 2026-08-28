@@ -1,10 +1,17 @@
 <script setup>
 import GeneradorTexto from "./GeneradorTexto.vue";
+import CargaLienzoListo from "./CargaLienzoListo.vue";
 
 const props = defineProps({
   proyectoId: { type: [String, Number], required: true },
   store: { type: Object, required: true },
 });
+// Un lienzo nuevo (a diferencia de una imagen) no vive en `store` (el
+// composable useImagenes) sino en `proyecto.lienzos`/`lienzo.items` de cada
+// vista -- store.cargar() por sí solo no alcanza para refrescar eso. Se
+// reemite hacia arriba para que cada vista (ProyectoDetalleView, LienzoView)
+// lo conecte a su propio cargar().
+const emit = defineEmits(["agregados"]);
 </script>
 
 <template>
@@ -31,6 +38,13 @@ const props = defineProps({
       >
         Crear texto
       </button>
+      <button
+        class="pb-2 -mb-px border-b-2 transition-colors"
+        :class="store.modoCarga.value === 'listo' ? 'border-np-teal text-np-teal' : 'border-transparent text-np-ink/40 hover:text-np-ink/70'"
+        @click="store.modoCarga.value = 'listo'"
+      >
+        Subir lienzo listo
+      </button>
     </div>
 
     <label
@@ -41,13 +55,26 @@ const props = defineProps({
       @dragleave.prevent="store.arrastrandoArchivo.value = false"
       @drop.prevent="store.onDropArchivos"
     >
-      <span>{{ store.subiendo.value ? "Subiendo..." : "Elegir imágenes o arrastrarlas acá" }}</span>
-      <input type="file" multiple accept="image/*" class="hidden" @change="store.subirArchivos" :disabled="store.subiendo.value" />
+      <span>{{ store.subiendo.value ? "Subiendo..." : "Elegir imágenes o PDF, o arrastrarlos acá" }}</span>
+      <input
+        type="file"
+        multiple
+        accept="image/*,application/pdf"
+        class="hidden"
+        @change="store.subirArchivos"
+        :disabled="store.subiendo.value"
+      />
     </label>
 
     <GeneradorTexto v-else-if="store.modoCarga.value === 'texto'" :proyecto-id="props.proyectoId" @agregada="store.cargar" class="mt-4" />
 
-    <div v-else class="space-y-3 mt-4">
+    <CargaLienzoListo
+      v-else-if="store.modoCarga.value === 'listo'"
+      :proyecto-id="props.proyectoId"
+      @agregados="emit('agregados', $event)"
+    />
+
+    <div v-else-if="store.modoCarga.value === 'buscar'" class="space-y-3 mt-4">
       <div class="flex gap-2">
         <input
           v-model="store.busqueda.value"
