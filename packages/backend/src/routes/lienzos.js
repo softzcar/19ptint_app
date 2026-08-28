@@ -10,6 +10,7 @@ import { calcularAcomodo } from "../lib/packing.js";
 import { exportarLienzo } from "../lib/exportarLienzo.js";
 import { leer, borrar, guardarDesdeArchivo } from "../lib/storage.js";
 import { pdfDimensionesMM } from "../lib/pdf.js";
+import { encolarEntregaLienzo } from "../lib/entregas.js";
 
 export const lienzosRouter = Router();
 lienzosRouter.use(requireAuth);
@@ -224,31 +225,29 @@ lienzosRouter.patch("/lienzo-items/:id", requireAuth, async (req, res) => {
  * por error, PC reinstalada -- no había forma de pedirlo de nuevo sin tocar
  * la base a mano.
  *
- * Si el export ya fue purgado por retención se regenera acá mismo: el lienzo
- * siempre se puede reconstruir desde su diseño.
+ * Si el export ya fue purgado por retención, encolarEntregaLienzo() se ocupa
+ * de volver a generarlo: el lienzo siempre se reconstruye desde su diseño.
  */
 lienzosRouter.post("/lienzos/:id/reenviar", cargarLienzoPropio, async (req, res) => {
-  const entrega = await prisma.entregaLienzo.findUnique({
-    where: { lienzo_id: req.lienzo.id },
-  });
-  if (!entrega) {
+  // Sin entrega previa no hay nada que "re"-enviar: el lienzo nunca salió a
+  // producción, y el camino correcto es confirmar el pedido.
+  if (!req.lienzo.entrega || !req.lienzo.id_empresa_ninesys) {
     return res.status(409).json({
       error: "Este lienzo todavía no se envió a producción: primero hay que confirmar el pedido.",
     });
   }
 
-  if (!req.lienzo.ruta_export) {
-    try {
-      await exportarLienzo(req.lienzo.id);
-    } catch (err) {
-      return res.status(400).json({ error: `No se pudo regenerar el archivo: ${err.message}` });
-    }
+  // Se reusa el mismo helper que usa el alta del pedido en vez de repetir la
+  // lógica: encola el render en vez de hacerlo dentro del request (un lienzo
+  // grande lo haría timeoutear) y deja un solo lugar donde se define qué
+  // significa "poner en cola para la PC de producción".
+  try {
+    await encolarEntregaLienzo(req.lienzo, req.lienzo.id_empresa_ninesys);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
   }
 
-  const actualizada = await prisma.entregaLienzo.update({
-    where: { id: entrega.id },
-    data: { estado: "pendiente", intentos: 0, ultimo_error: null, entregado_en: null, purgado_en: null },
-  });
+  const actualizada = await prisma.entregaLienzo.findUnique({ where: { lienzo_id: req.lienzo.id } });
   res.json(actualizada);
 });
 
