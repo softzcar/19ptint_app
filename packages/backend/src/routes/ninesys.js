@@ -216,7 +216,16 @@ ninesysRouter.post("/:idEmpresa/presupuesto", async (req, res) => {
 
     await prisma.lienzo.updateMany({
       where: { id: { in: lienzos.map((l) => l.id) } },
-      data: { id_presupuesto_ninesys: idPresupuesto, id_empresa_ninesys: idEmpresa },
+      data: {
+        id_presupuesto_ninesys: idPresupuesto,
+        id_empresa_ninesys: idEmpresa,
+        // Se congela el cliente y la fecha tal como se cotizó: con esto se
+        // arma el nombre del archivo que baja a la PC de producción, sin
+        // depender de volver a consultarle a Ninesys (ver routes/agente.js).
+        cliente_nombre: cliente.first_name ?? null,
+        cliente_apellido: cliente.last_name ?? null,
+        pedido_en: new Date(),
+      },
     });
 
     // Recién en este punto se sabe a qué empresa le toca imprimir, así que

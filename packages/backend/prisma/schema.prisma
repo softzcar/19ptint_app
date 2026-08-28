@@ -157,6 +157,15 @@ model Lienzo {
   // duplicados y permite mostrar el estado en la UI del lienzo.
   id_presupuesto_ninesys Int?
   id_empresa_ninesys     Int?
+  // Copia del cliente y la fecha al confirmar el pedido. Se guardan acá (y no
+  // se consultan a Ninesys al momento de entregar) por dos razones: el nombre
+  // del archivo que baja a la PC de producción se arma con estos datos, y no
+  // queremos que esa ruta dependa de que Ninesys responda; y además el nombre
+  // debe quedar congelado tal como se cotizó, aunque después alguien corrija
+  // la ficha del cliente.
+  cliente_nombre         String?   @db.VarChar(100)
+  cliente_apellido       String?   @db.VarChar(100)
+  pedido_en              DateTime?
   // Entrega a la PC de producción de la empresa -- se crea al confirmar el
   // pedido, junto con id_empresa_ninesys.
   entrega                EntregaLienzo?

@@ -50,12 +50,55 @@ agenteRouter.get("/config", (req, res) => {
   });
 });
 
-// Nombre con el que el archivo aterriza en la PC. Se prefiere algo legible
-// para el operador (y rastreable contra el pedido) al UUID interno.
+/**
+ * Deja un texto usable como parte de un nombre de archivo en Windows:
+ * minúsculas, sin acentos y sin ninguno de los caracteres que Windows
+ * prohíbe (\ / : * ? " < > |). Sin esto, un cliente llamado "Ana Muñoz"
+ * generaría un archivo que Windows rechaza o guarda con el nombre roto.
+ */
+function parteNombre(texto) {
+  return String(texto ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // quita las tildes ya separadas por NFD
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .trim();
+}
+
+function fechaDDMMYYYY(fecha) {
+  const d = new Date(fecha);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}-${mm}-${d.getFullYear()}`;
+}
+
+/**
+ * Nombre con el que el archivo aterriza en la PC de producción, pensado para
+ * que el operador sepa qué es sin abrirlo:
+ *
+ *   dtf28cm-28-08-2026-juan_perez-19.png
+ *   └tipo+ancho  └fecha del pedido  └cliente    └id del lienzo
+ *
+ * El id del lienzo va al final a propósito: sin él, dos pedidos del mismo
+ * cliente, el mismo día y del mismo tipo generarían el MISMO nombre y el
+ * segundo pisaría al primero -- en una imprenta eso es un trabajo que
+ * desaparece sin aviso. Además es el mismo número que se ve en el panel, así
+ * que permite rastrear el archivo hasta su diseño.
+ */
 function nombreArchivo(lienzo) {
   const ext = (lienzo.ruta_export.split(".").pop() ?? "png").toLowerCase();
-  const presupuesto = lienzo.id_presupuesto_ninesys ? `-presupuesto-${lienzo.id_presupuesto_ninesys}` : "";
-  return `lienzo-${lienzo.id}${presupuesto}.${ext}`;
+  const anchoCm = Math.round(Number(lienzo.ancho_mm) / 10);
+  const tipo = `${parteNombre(lienzo.tipo)}${anchoCm}cm`;
+
+  // pedido_en solo existe desde que se confirma el pedido; para un lienzo
+  // anterior a ese cambio se cae a la fecha de creación.
+  const fecha = fechaDDMMYYYY(lienzo.pedido_en ?? lienzo.created_at);
+
+  const nombre = parteNombre(lienzo.cliente_nombre);
+  const apellido = parteNombre(lienzo.cliente_apellido);
+  const cliente = [nombre, apellido].filter(Boolean).join("_") || "sin-cliente";
+
+  return `${tipo}-${fecha}-${cliente}-${lienzo.id}.${ext}`;
 }
 
 async function sha256De(rutaRelativa) {
