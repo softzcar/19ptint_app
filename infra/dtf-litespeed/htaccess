@@ -1,0 +1,11 @@
+RewriteEngine On
+
+# La raíz la sirve el índice por defecto, no la reescritura de abajo, así que
+# no pasaba por el contexto que le pone Cache-Control (ver vhost.conf). Se
+# reescribe explícitamente para que / reciba la misma cabecera que el resto.
+RewriteRule ^$ index.html [L]
+
+RewriteCond %{REQUEST_URI} !^/api/
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [L]
