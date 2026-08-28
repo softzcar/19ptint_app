@@ -128,7 +128,7 @@ async function enviarPedido() {
     };
     paso.value = "resultado";
   } catch (err) {
-    errorGeneral.value = err.response?.data?.error ?? "No se pudo crear el presupuesto en Ninesys, intentá de nuevo";
+    errorGeneral.value = err.response?.data?.error ?? "No se pudo crear el presupuesto en Ninesys, intente de nuevo";
   } finally {
     enviando.value = false;
   }
@@ -154,7 +154,7 @@ async function enviarPedido() {
       </p>
       <p v-else class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
         No se pudo enviar la notificación automática por WhatsApp{{ resultado.whatsappMotivo ? `: ${resultado.whatsappMotivo}` : "" }}.
-        El presupuesto ya está creado — comunicate directo con el cliente o pedile a soporte que reenvíe la confirmación.
+        El presupuesto ya está creado — comuníquese directamente con el cliente o pídale a soporte que reenvíe la confirmación.
       </p>
     </template>
 
@@ -163,10 +163,10 @@ async function enviarPedido() {
 
       <PedidoServicioSelector v-if="idEmpresa && paso !== 'empresa'" :id-empresa="idEmpresa" @seleccionar="elegirServicio" />
 
-      <p v-if="buscandoClientePropio" class="text-sm text-np-ink/40">Verificando tus datos…</p>
+      <p v-if="buscandoClientePropio" class="text-sm text-np-ink/40">Verificando sus datos…</p>
 
       <PedidoClienteBuscador
-        v-if="servicio && (paso === 'cliente' || paso === 'confirmar')"
+        v-if="servicio && paso === 'cliente'"
         :id-empresa="idEmpresa"
         @confirmado="confirmarCliente"
       />

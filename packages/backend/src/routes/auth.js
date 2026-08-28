@@ -48,7 +48,7 @@ authRouter.post("/login", async (req, res) => {
 // Paso 1: identificar la situación de un teléfono antes de pedir la clave.
 authRouter.post("/verificar-telefono", async (req, res) => {
   const normalizado = normalizarTelefono(req.body?.telefono);
-  if (!normalizado) return res.status(400).json({ error: "Ingresá un teléfono válido" });
+  if (!normalizado) return res.status(400).json({ error: "Ingrese un teléfono válido" });
 
   const existente = await prisma.usuario.findUnique({ where: { telefono: normalizado.e164 } });
   if (existente) {
@@ -81,7 +81,7 @@ authRouter.post("/login-cliente", async (req, res) => {
 // para el primer acceso como para "olvidé mi clave" (mismo endpoint).
 authRouter.post("/solicitar-clave", async (req, res) => {
   const normalizado = normalizarTelefono(req.body?.telefono);
-  if (!normalizado) return res.status(400).json({ error: "Ingresá un teléfono válido" });
+  if (!normalizado) return res.status(400).json({ error: "Ingrese un teléfono válido" });
 
   // Se vuelve a verificar en vivo -- no alcanza con confiar en lo que ya vio
   // el frontend en /verificar-telefono, alguien podría llamar este endpoint
@@ -93,11 +93,11 @@ authRouter.post("/solicitar-clave", async (req, res) => {
 
   const pin = String(randomInt(0, 1_000_000)).padStart(6, "0");
   const mensaje = [
-    "Hola, esta es tu clave de acceso a Nineteen Print (dtf.nineteencustom.com):",
+    "Hola, esta es su clave de acceso a Nineteen Print (dtf.nineteencustom.com):",
     "",
     pin,
     "",
-    "Usala junto a tu número de teléfono para entrar. Si volvés a pedir una clave, la anterior deja de funcionar.",
+    "Úsela junto a su número de teléfono para entrar. Si vuelve a pedir una clave, la anterior deja de funcionar.",
   ].join("\n");
 
   // El envío va ANTES de tocar la base a propósito: si esta persona ya tenía
@@ -109,7 +109,7 @@ authRouter.post("/solicitar-clave", async (req, res) => {
     await enviarWhatsapp(idEmpresa, normalizado.e164, cliente.first_name, mensaje);
   } catch (err) {
     return res.status(502).json({
-      error: "No se pudo enviar la clave por WhatsApp en este momento. Volvé a intentar en unos minutos o comunicate con ventas.",
+      error: "No se pudo enviar la clave por WhatsApp en este momento. Vuelva a intentar en unos minutos o comuníquese con ventas.",
     });
   }
 

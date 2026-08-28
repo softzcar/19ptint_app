@@ -37,7 +37,7 @@ async function guardar() {
       </router-link>
       <h1 class="text-2xl font-bold text-np-ink mt-1">Mi perfil</h1>
       <p class="text-sm text-np-ink/50">
-        Estos datos se usan para generar el pedido por WhatsApp — completalos antes de enviar tu primer pedido.
+        Estos datos se usan para generar el pedido por WhatsApp — complételos antes de enviar su primer pedido.
       </p>
     </div>
 

@@ -328,7 +328,7 @@ imagenesRouter.patch("/imagenes/:id", cargarImagenPropia, async (req, res) => {
 // sobrescrito con las dimensiones recortadas al bounding box.
 imagenesRouter.post("/imagenes/:id/mantener-fondo", cargarImagenPropia, async (req, res) => {
   if (["pendiente", "procesando"].includes(req.imagen.estado_fondo)) {
-    return res.status(409).json({ error: "Esperá a que termine de procesar antes de cambiar esta opción" });
+    return res.status(409).json({ error: "Espere a que termine de procesar antes de cambiar esta opción" });
   }
   const buffer = await leer(req.imagen.ruta_original);
   const metadata = await sharp(buffer).metadata();
@@ -364,7 +364,7 @@ imagenesRouter.post("/imagenes/:id/quitar-fondo", cargarImagenPropia, async (req
   const ext = path.extname(req.imagen.ruta_original).toLowerCase();
   if (FORMATOS_SIN_QUITAR_FONDO.has(ext)) {
     return res.status(400).json({
-      error: "El quitado de fondo automático no soporta este formato de imagen. Subí un PNG, JPEG, WEBP o GIF.",
+      error: "El quitado de fondo automático no soporta este formato de imagen. Suba un PNG, JPEG, WEBP o GIF.",
     });
   }
   try {
@@ -433,7 +433,7 @@ imagenesRouter.post(
 // existe un nivel de historial -- no hay pila de upscales, un solo "antes".
 imagenesRouter.post("/imagenes/:id/revertir-upscale", cargarImagenPropia, async (req, res) => {
   if (["pendiente", "procesando"].includes(req.imagen.estado_upscale)) {
-    return res.status(409).json({ error: "Esperá a que termine de procesar antes de deshacerlo" });
+    return res.status(409).json({ error: "Espere a que termine de procesar antes de deshacerlo" });
   }
   if (!req.imagen.ruta_pre_upscale) {
     return res.status(400).json({ error: "No hay una versión anterior a la que volver" });

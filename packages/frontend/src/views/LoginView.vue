@@ -108,7 +108,7 @@ async function loginAdmin() {
         <!-- Paso 1: teléfono -->
         <form v-if="paso === 'telefono'" class="space-y-5" @submit.prevent="verificarTelefono">
           <div class="space-y-1.5">
-            <label class="block text-xs font-bold uppercase tracking-wide text-np-ink/60">Tu teléfono</label>
+            <label class="block text-xs font-bold uppercase tracking-wide text-np-ink/60">Su teléfono</label>
             <input
               v-model="telefono"
               type="tel"
@@ -126,14 +126,14 @@ async function loginAdmin() {
             {{ cargando ? "Verificando..." : "Continuar" }}
           </button>
           <button type="button" class="w-full text-xs text-np-ink/40 hover:text-np-ink/70 underline" @click="paso = 'admin'">
-            ¿Sos administrador? Entrá con tu email
+            ¿Es administrador? Ingrese con su correo
           </button>
         </form>
 
         <!-- Paso 2a: ya tiene clave -->
         <form v-else-if="paso === 'clave'" class="space-y-5" @submit.prevent="loginCliente">
           <p v-if="claveReenviada" class="text-sm text-np-teal-dark bg-np-teal-light/40 border border-np-teal/30 rounded-md px-3 py-2">
-            Te mandamos la clave por WhatsApp al {{ telefono }}. Puede tardar unos segundos en llegar.
+            Le enviamos la clave por WhatsApp al {{ telefono }}. Puede tardar unos segundos en llegar.
           </p>
           <div class="space-y-1.5">
             <label class="block text-xs font-bold uppercase tracking-wide text-np-ink/60">Clave</label>
@@ -166,7 +166,7 @@ async function loginAdmin() {
         <!-- Paso 2b: es cliente pero nunca pidió acceso -->
         <div v-else-if="paso === 'sin_clave'" class="space-y-5">
           <p class="text-sm text-np-ink/70">
-            Ya sos cliente, pero todavía no tenés una clave para entrar acá. Te la mandamos por WhatsApp al
+            Ya es cliente, pero todavía no tiene una clave para entrar aquí. Se la enviamos por WhatsApp al
             <strong>{{ telefono }}</strong>.
           </p>
           <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
@@ -186,7 +186,7 @@ async function loginAdmin() {
         <!-- Paso 2c: no es cliente de ninguna empresa todavía -->
         <div v-else-if="paso === 'no_registrado'" class="space-y-4">
           <p class="text-sm text-np-ink/70">
-            No encontramos ese teléfono como cliente. Escribile a la empresa que te convenga para que te den de alta:
+            No encontramos ese teléfono como cliente. Escríbale a la empresa de su preferencia para que le den de alta:
           </p>
           <div class="space-y-2">
             <a

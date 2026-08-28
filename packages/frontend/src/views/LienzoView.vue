@@ -284,7 +284,7 @@ onUnmounted(() => clearInterval(intervaloFondo));
       </div>
     </div>
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-    <p v-if="lienzo.items.length" class="text-xs text-np-ink/40">Arrastrá las piezas para ajustar manualmente el acomodo.</p>
+    <p v-if="lienzo.items.length" class="text-xs text-np-ink/40">Arrastre las piezas para ajustar manualmente el acomodo.</p>
     <p v-else class="text-xs text-np-ink/40">Lienzo subido ya armado -- sin piezas para reacomodar.</p>
 
     <section v-if="editando" class="bg-white rounded-xl border border-black/5 shadow-sm p-5 sm:p-6 space-y-4">
@@ -330,7 +330,7 @@ onUnmounted(() => clearInterval(intervaloFondo));
 
       <div>
         <p class="text-sm font-medium text-np-ink/70 mb-1.5">
-          Imágenes del proyecto — marcá cuáles incluir en este lienzo
+          Imágenes del proyecto — marque cuáles incluir en este lienzo
         </p>
         <div class="grid sm:grid-cols-3 gap-3">
           <TarjetaImagen
@@ -405,7 +405,7 @@ onUnmounted(() => clearInterval(intervaloFondo));
     <div v-else class="bg-white rounded-xl border border-black/5 shadow-sm p-4">
       <img v-if="previewUrlDirecto" :src="previewUrlDirecto" class="max-w-full max-h-[70vh] mx-auto" />
       <p v-else class="text-sm text-np-ink/50 text-center py-8">
-        Sin vista previa para PDF -- usá "Exportar {{ lienzo.formato_exportacion.toUpperCase() }}" para verlo.
+        Sin vista previa para PDF -- use "Exportar {{ lienzo.formato_exportacion.toUpperCase() }}" para verlo.
       </p>
     </div>
 

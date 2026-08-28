@@ -181,7 +181,7 @@ onUnmounted(() => clearInterval(intervalo));
     <section v-if="proyecto.lienzos.length" class="bg-white rounded-xl border border-black/5 shadow-sm p-5 sm:p-6 space-y-3">
       <h2 class="text-xs font-bold uppercase tracking-wide text-np-ink/50">Lienzos generados</h2>
       <p v-if="lienzosPendientes.length > 1" class="text-xs text-np-ink/40">
-        Marcá varios para pedir un solo presupuesto combinado (cada uno queda como su propia línea, el total los suma).
+        Marque varios para pedir un solo presupuesto combinado (cada uno queda como su propia línea, el total los suma).
       </p>
       <ul class="space-y-1.5 text-sm">
         <li v-for="l in proyecto.lienzos" :key="l.id" class="flex items-center gap-2">

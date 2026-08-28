@@ -57,7 +57,7 @@ adminRouter.post("/usuarios", async (req, res) => {
 adminRouter.patch("/usuarios/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (id === req.usuarioId && req.body?.activo === false) {
-    return res.status(400).json({ error: "No podés desactivar tu propia cuenta" });
+    return res.status(400).json({ error: "No puede desactivar su propia cuenta" });
   }
   const { nombre, rol, activo, limite_diario, password } = req.body ?? {};
   const data = {};
@@ -75,7 +75,7 @@ adminRouter.patch("/usuarios/:id", async (req, res) => {
 adminRouter.delete("/usuarios/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (id === req.usuarioId) {
-    return res.status(400).json({ error: "No podés eliminar tu propia cuenta" });
+    return res.status(400).json({ error: "No puede eliminar su propia cuenta" });
   }
   await prisma.usuario.delete({ where: { id } }).catch(() => null);
   res.status(204).end();
@@ -115,7 +115,7 @@ adminRouter.post("/agentes/:id/token", async (req, res) => {
   res.json({
     token,
     empresa: agente.nombre,
-    aviso: "Guardalo ahora: no se vuelve a mostrar. Si se pierde, generá uno nuevo.",
+    aviso: "Guárdelo ahora: no se vuelve a mostrar. Si se pierde, genere uno nuevo.",
   });
 });
 

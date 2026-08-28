@@ -317,7 +317,7 @@ lienzosRouter.post(
     const formato_exportacion = { ".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg", ".pdf": "pdf" }[ext];
     if (!formato_exportacion) {
       await limpiarTemporal();
-      return res.status(400).json({ error: "Formato no soportado: subí un PNG, JPEG o PDF." });
+      return res.status(400).json({ error: "Formato no soportado: suba un PNG, JPEG o PDF." });
     }
     // Mismo emparejamiento tipo/formato que el resto de la app (CONTEXTO.md
     // §2/§4): el software de la impresora de cada tipo espera un formato

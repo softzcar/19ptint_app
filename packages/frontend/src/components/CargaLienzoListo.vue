@@ -111,7 +111,7 @@ async function subirTodo() {
   if (archivos.value.every((a) => a.estado === "listo")) {
     archivos.value = [];
   } else if (!creados.length) {
-    error.value = "No se pudo subir ningún archivo -- revisá el detalle en cada uno.";
+    error.value = "No se pudo subir ningún archivo -- revise el detalle en cada uno.";
   }
 }
 </script>
@@ -190,7 +190,7 @@ async function subirTodo() {
       @dragleave.prevent="arrastrando = false"
       @drop.prevent="onDrop"
     >
-      <span>{{ archivos.length ? "Agregar otro archivo" : "Elegí archivos o arrastralos acá" }} — sin límite de tamaño</span>
+      <span>{{ archivos.length ? "Agregar otro archivo" : "Elija archivos o arrástrelos aquí" }} — sin límite de tamaño</span>
       <input type="file" multiple accept="image/png,image/jpeg,application/pdf" class="hidden" @change="elegirArchivos" />
     </label>
 
