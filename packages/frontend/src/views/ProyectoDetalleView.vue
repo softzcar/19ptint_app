@@ -5,12 +5,22 @@ import { api } from "../lib/api.js";
 import { useImagenes, limiteAnchoUtilMm, validarParaAcomodar, erroresPorImagen } from "../composables/useImagenes.js";
 import CargaImagenes from "../components/CargaImagenes.vue";
 import TarjetaImagen from "../components/TarjetaImagen.vue";
+import PedidoWhatsApp from "../components/PedidoWhatsApp.vue";
 
 const props = defineProps({ id: { type: [String, Number], required: true } });
 const router = useRouter();
 
 const proyecto = ref(null);
 let intervalo = null;
+
+// Varios lienzos "ya listos" (subidos directo, ver CargaLienzoListo.vue) se
+// pueden combinar en UN solo presupuesto -- cada uno queda como su propia
+// línea de producto (routes/ninesys.js), el total los suma. Solo tiene
+// sentido marcar los que todavía no tienen presupuesto: uno ya facturado no
+// se puede volver a sumar a otro pedido.
+const lienzosMarcados = ref({});
+const lienzosPendientes = computed(() => proyecto.value?.lienzos?.filter((l) => !l.id_presupuesto_ninesys) ?? []);
+const lienzosParaPresupuesto = computed(() => lienzosPendientes.value.filter((l) => lienzosMarcados.value[l.id]));
 
 const ANCHOS_DTF = [
   { valor: 280, etiqueta: "28 cm" },
@@ -83,7 +93,7 @@ onUnmounted(() => clearInterval(intervalo));
     <section class="bg-white rounded-xl border border-black/5 shadow-sm p-5 sm:p-6 space-y-4">
       <h2 class="text-xs font-bold uppercase tracking-wide text-np-ink/50">Imágenes</h2>
 
-      <CargaImagenes :proyecto-id="props.id" :store="imgs" />
+      <CargaImagenes :proyecto-id="props.id" :store="imgs" @agregados="cargar" />
 
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <TarjetaImagen
@@ -97,7 +107,10 @@ onUnmounted(() => clearInterval(intervalo));
       </div>
     </section>
 
-    <section class="bg-white rounded-xl border border-black/5 shadow-sm p-5 sm:p-6 space-y-4">
+    <section
+      v-if="imgs.modoCarga.value !== 'listo'"
+      class="bg-white rounded-xl border border-black/5 shadow-sm p-5 sm:p-6 space-y-4"
+    >
       <h2 class="text-xs font-bold uppercase tracking-wide text-np-ink/50">Generar lienzo</h2>
       <div class="grid sm:grid-cols-4 gap-3 items-end">
         <label class="text-sm text-np-ink/60">
@@ -167,13 +180,32 @@ onUnmounted(() => clearInterval(intervalo));
 
     <section v-if="proyecto.lienzos.length" class="bg-white rounded-xl border border-black/5 shadow-sm p-5 sm:p-6 space-y-3">
       <h2 class="text-xs font-bold uppercase tracking-wide text-np-ink/50">Lienzos generados</h2>
-      <ul class="space-y-1 text-sm">
-        <li v-for="l in proyecto.lienzos" :key="l.id">
+      <p v-if="lienzosPendientes.length > 1" class="text-xs text-np-ink/40">
+        Marcá varios para pedir un solo presupuesto combinado (cada uno queda como su propia línea, el total los suma).
+      </p>
+      <ul class="space-y-1.5 text-sm">
+        <li v-for="l in proyecto.lienzos" :key="l.id" class="flex items-center gap-2">
+          <input
+            v-if="!l.id_presupuesto_ninesys"
+            type="checkbox"
+            class="accent-np-teal"
+            :checked="lienzosMarcados[l.id]"
+            @change="lienzosMarcados = { ...lienzosMarcados, [l.id]: !lienzosMarcados[l.id] }"
+          />
           <router-link :to="{ name: 'lienzo', params: { id: l.id } }" class="text-np-ink hover:text-np-teal transition-colors">
-            <span class="font-bold">#{{ l.id }}</span> — {{ l.tipo }} — {{ l.ancho_mm }}mm × {{ Math.round(l.alto_usado_mm) }}mm — {{ l.items.length }} piezas
+            <span class="font-bold">#{{ l.id }}</span> — {{ l.tipo }} — {{ l.ancho_mm }}mm × {{ Math.round(l.alto_usado_mm) }}mm
+            — {{ l.items.length ? `${l.items.length} piezas` : "diseño subido" }}
+            <span v-if="l.tela" class="text-np-ink/40">(tela: {{ l.tela }})</span>
           </router-link>
+          <span v-if="l.id_presupuesto_ninesys" class="text-xs text-np-ink/40">presupuesto #{{ l.id_presupuesto_ninesys }}</span>
         </li>
       </ul>
     </section>
+
+    <PedidoWhatsApp
+      v-if="lienzosParaPresupuesto.length"
+      :key="lienzosParaPresupuesto.map((l) => l.id).join('-')"
+      :lienzos="lienzosParaPresupuesto"
+    />
   </div>
 </template>

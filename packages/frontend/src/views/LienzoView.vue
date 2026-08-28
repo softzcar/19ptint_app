@@ -325,7 +325,7 @@ onUnmounted(() => clearInterval(intervaloFondo));
 
       <div>
         <p class="text-sm font-medium text-np-ink/70 mb-1.5">Agregar imágenes nuevas</p>
-        <CargaImagenes :proyecto-id="proyectoIdRef" :store="imgs" />
+        <CargaImagenes :proyecto-id="proyectoIdRef" :store="imgs" @agregados="cargar" />
       </div>
 
       <div>
@@ -411,6 +411,6 @@ onUnmounted(() => clearInterval(intervaloFondo));
 
     <EstadoEntrega :entrega="lienzo.entrega" :ahora="ahora" />
 
-    <PedidoWhatsApp :lienzo="lienzo" />
+    <PedidoWhatsApp :lienzos="[lienzo]" />
   </div>
 </template>

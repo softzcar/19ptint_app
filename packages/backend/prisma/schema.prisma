@@ -143,6 +143,12 @@ model Lienzo {
   alto_usado_mm        Decimal?           @db.Decimal(10, 2)
   formato_exportacion  FormatoExportacion
   ruta_export          String?            @db.VarChar(500)
+  // Tela que trae/pide el cliente -- solo tiene sentido para sublimación
+  // (DTF no lleva este detalle). Texto libre porque no hay un catálogo
+  // cerrado de telas: se escribe al subir el lienzo y viaja como detalle
+  // del producto al crear el presupuesto en Ninesys (campo `tela`, hasta
+  // ahora siempre "No aplica").
+  tela                 String?            @db.VarChar(255)
   created_at           DateTime           @default(now())
   proyecto             Proyecto           @relation(fields: [proyecto_id], references: [id], onDelete: Cascade)
   items                LienzoItem[]

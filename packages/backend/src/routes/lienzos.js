@@ -9,6 +9,7 @@ import { cargarProyecto } from "./proyectos.js";
 import { calcularAcomodo } from "../lib/packing.js";
 import { exportarLienzo } from "../lib/exportarLienzo.js";
 import { leer, borrar, guardarDesdeArchivo } from "../lib/storage.js";
+import { pdfDimensionesMM } from "../lib/pdf.js";
 
 export const lienzosRouter = Router();
 lienzosRouter.use(requireAuth);
@@ -269,7 +270,7 @@ lienzosRouter.post(
 
     const limpiarTemporal = () => unlink(req.file.path).catch(() => {});
 
-    const { tipo } = req.body ?? {};
+    const { tipo, tela } = req.body ?? {};
 
     if (!["dtf", "sublimacion"].includes(tipo)) {
       await limpiarTemporal();
@@ -296,18 +297,36 @@ lienzosRouter.post(
     // PedidoWhatsApp.vue usa para calcular los metros de largo a facturar
     // (cantidadMetros = alto_usado_mm / 1000), así que vale la pena, pero
     // sin esto igual se puede pedir presupuesto -- el campo queda null.
-    // sharp lee metadata desde el archivo en disco (no lo carga entero a
-    // memoria), así que es seguro aunque el archivo sea enorme -- y si falla
-    // (ej. un PDF, que sharp no sabe leer), se guarda igual, sin esos datos.
+    //
+    // Solo para este camino (lienzo ya armado, subido tal cual): a diferencia
+    // del motor de acomodo, que calcula el largo exacto de lo que él mismo
+    // empaquetó, acá el archivo viene de afuera y no hay margen de maniobra
+    // -- se suma un 3% al largo para cubrir la pérdida de material habitual
+    // al trabajarlo (alineación, recorte) en vez de cobrar el metraje exacto
+    // del archivo y quedarse corto.
+    const MARGEN_DESPERDICIO = 1.03;
     let ancho_mm = 0;
     let alto_usado_mm = null;
     try {
-      const meta = await sharp(req.file.path).metadata();
-      if (meta.width) ancho_mm = Math.round((meta.width / 300) * 25.4);
-      if (meta.height) alto_usado_mm = Math.round((meta.height / 300) * 25.4);
-    } catch {
-      // Formato que sharp no puede leer (ej. PDF) o archivo fuera de lo
-      // común: se guarda igual, sin dimensiones de referencia.
+      // PDF (sublimación) no pasa por sharp -- los binarios de libvips que
+      // trae npm no incluyen soporte PDF -- se lee el tamaño de página con
+      // pdfinfo (poppler), sin rasterizar nada. Ambos leen desde el archivo
+      // en disco (no lo cargan entero a memoria), así que es seguro aunque
+      // el archivo sea enorme.
+      if (formato_exportacion === "pdf") {
+        const { anchoMM, altoMM } = await pdfDimensionesMM(req.file.path);
+        ancho_mm = Math.round(anchoMM);
+        alto_usado_mm = Math.round(altoMM * MARGEN_DESPERDICIO);
+      } else {
+        const meta = await sharp(req.file.path).metadata();
+        if (meta.width) ancho_mm = Math.round((meta.width / 300) * 25.4);
+        if (meta.height) alto_usado_mm = Math.round((meta.height / 300) * 25.4 * MARGEN_DESPERDICIO);
+      }
+    } catch (err) {
+      // Archivo fuera de lo común (ej. un PDF sin página, o corrupto): se
+      // guarda igual, sin dimensiones de referencia -- nunca bloquea la
+      // subida, pero queda logueado para poder investigar si pasa seguido.
+      console.warn(`[lienzos] no se pudo calcular el tamaño de ${req.file.originalname}:`, err.message);
     }
 
     try {
@@ -320,6 +339,10 @@ lienzosRouter.post(
           alto_usado_mm,
           formato_exportacion,
           ruta_export,
+          // Solo aplica a sublimación (DTF no lleva este detalle) -- se
+          // ignora en silencio si viene en un lienzo DTF en vez de rechazar,
+          // total no se usa para nada del lado de DTF.
+          tela: tipo === "sublimacion" && tela?.trim() ? tela.trim() : null,
         },
       });
       res.status(201).json(lienzo);
