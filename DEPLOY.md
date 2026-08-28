@@ -1,51 +1,75 @@
 # Deploy al VPS
 
-Guía para mover la app (ya probada en local, ver README.md) al VPS privado
-sin GPU mencionado en CONTEXTO.md §3. Asume Ubuntu 22.04/24.04 con acceso
-sudo y un dominio ya apuntando al VPS (para SSL con certbot). Todo corre
-nativo (sin Docker), igual que en local — mismo motivo que en local: es la
-topología más simple para un solo VPS.
+Guía para mover la app (ya probada en local, ver README.md) al VPS real donde
+corre hoy: `dtf.nineteencustom.com`, en el mismo servidor Contabo que aloja
+`ninesys-api`/`app_multi` en Producción (`vps-contabo-prod`, ver
+`ninesys-hub`). **No es Ubuntu**: es AlmaLinux 9 con CyberPanel/OpenLiteSpeed
+ya instalado de antes para los otros vhosts — todo lo de acá asume eso, no un
+VPS en blanco. Corre nativo (sin Docker), como el resto de vhosts del server.
 
 ## 0. Diferencia importante: Vulkan sin GPU
 
-`realesrgan-ncnn-vulkan` necesita un dispositivo Vulkan. El VPS no tiene
-GPU, así que hay que instalar un renderer Vulkan por software (`lavapipe`,
-vía Mesa) para que el binario pueda inicializar y correr sobre CPU:
+`realesrgan-ncnn-vulkan` necesita un dispositivo Vulkan. El VPS no tiene GPU,
+así que hace falta un renderer Vulkan por software (`lavapipe`, vía Mesa)
+para que el binario pueda inicializar y correr sobre CPU:
 
 ```bash
-sudo apt install -y mesa-vulkan-drivers vulkan-tools
+dnf install -y mesa-vulkan-drivers vulkan-tools
 vulkaninfo | head -20   # debería listar "llvmpipe" como dispositivo
 ```
 
-Va a ser sensiblemente más lento que en la Mac de desarrollo (que usa GPU
-vía Metal) — esperado, ver CONTEXTO.md §3 "prioridad: que funcione, aunque
-sea lento al inicio".
+Va a ser sensiblemente más lento que en la Mac de desarrollo (que usa GPU vía
+Metal) — esperado, ver CONTEXTO.md §3 "prioridad: que funcione, aunque sea
+lento al inicio".
 
 ## 1. Paquetes del sistema
 
-```bash
-sudo apt update
-sudo apt install -y nginx mysql-server redis-server git build-essential \
-  curl unzip python3.12 python3.12-venv mesa-vulkan-drivers vulkan-tools poppler-utils
+CyberPanel ya trae MariaDB, Redis, Node y Python — solo faltan estos:
 
-# Node 20+ (nodesource)
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
+```bash
+dnf install -y git poppler-utils mesa-vulkan-drivers vulkan-tools
+# poppler-utils es el que da pdfinfo/pdftoppm -- sin este paquete un lienzo
+# subido en PDF (sublimación) se guarda con ancho_mm=0/alto_usado_mm=null en
+# silencio (falla "best-effort", no bloquea la subida, ver routes/lienzos.js)
+# y recién se nota cuando el presupuesto sale mal. Pasó en producción el
+# 2026-08-28 -- verificar SIEMPRE con `which pdfinfo` antes de dar por buena
+# una instalación nueva.
+
+python3.12 -m ensurepip 2>&1 | tail -1   # confirmar que python3.12 -m venv funciona
 ```
 
-## 2. Clonar y preparar el código
-
+Node 20 ya viene de CyberPanel; si hiciera falta instalarlo en otro server:
 ```bash
-sudo mkdir -p /opt/19print-app && sudo chown $USER:$USER /opt/19print-app
-git clone <url-del-repo> /opt/19print-app
-cd /opt/19print-app
-npm install --omit=dev   # instala los 4 workspaces (packing-engine/backend/worker/frontend)
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -   # Debian/Ubuntu
+# En AlmaLinux/RHEL: curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+dnf install -y nodejs   # o apt install -y nodejs, según el sistema
 ```
 
-## 3. MySQL
+## 2. Vhost (OpenLiteSpeed, no nginx)
+
+El vhost real (`/home/dtf.nineteencustom.com`) lo crea CyberPanel desde su
+panel (Website > Create Website), apuntando el document root a
+`public_html`. La configuración de headers/caché y el `.htaccess` que
+realmente aplican quedan documentados y versionados en
+`infra/dtf-litespeed/` (ver su README) — OpenLiteSpeed ignora `Header`
+dentro de `.htaccess`, así que el cacheo real se define en `vhost.conf`, no
+ahí.
+
+## 3. Clonar y preparar el código
 
 ```bash
-sudo mysql <<'SQL'
+git clone git@github.com:softzcar/19ptint_app.git /home/dtf.nineteencustom.com/app
+cd /home/dtf.nineteencustom.com/app
+npm install   # con dev deps: hacen falta para "npm run build" del frontend (vite).
+              # `npm install --omit=dev` rompe el build del frontend -- si se
+              # necesita algo más liviano para el backend en runtime, instalar
+              # con dev deps igual y no correr el build en el mismo paso.
+```
+
+## 4. MariaDB
+
+```bash
+mysql <<'SQL'
 CREATE DATABASE print19 CHARACTER SET utf8mb4;
 CREATE USER 'print19'@'localhost' IDENTIFIED BY '<password-fuerte>';
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES
@@ -54,207 +78,125 @@ FLUSH PRIVILEGES;
 SQL
 ```
 
-(A diferencia del entorno local, acá NO se necesitan privilegios de shadow
-database — se usa `prisma migrate deploy`, no `migrate dev`.)
+(Se usa `prisma migrate deploy`, no `migrate dev` — no hace falta shadow
+database.)
 
-## 4. Variables de entorno
+## 5. Variables de entorno
 
-`/opt/19print-app/packages/backend/.env`:
+`/home/dtf.nineteencustom.com/app/packages/backend/.env`:
 ```
 DATABASE_URL="mysql://print19:<password-fuerte>@localhost:3306/print19"
 JWT_SECRET="<generar con: openssl rand -hex 32>"
 PORT=4000
 REDIS_URL="redis://localhost:6379"
-CORS_ORIGIN="https://tu-dominio.com"
-STORAGE_DIR="/var/lib/19print/storage"
-PEXELS_API_KEY="<misma key que en local, o una nueva en pexels.com/api>"
+CORS_ORIGIN="https://dtf.nineteencustom.com"
+STORAGE_DIR="/home/dtf.nineteencustom.com/storage"
+PEXELS_API_KEY="<key de pexels.com/api>"
+NINESYS_API_URL="https://api.nineteengreen.com"   # Ninesys Dev (Postgres) -- ver CONTEXTO.md, la integración corre contra Dev, no contra Prod de Ninesys.
+MSG_NINESYS_URL="<url del servicio de WhatsApp>"
+MSG_NINESYS_DTF_TOKEN="<token de esta app en msg_ninesys>"
 ```
 
-`/opt/19print-app/packages/worker/.env`:
+`/home/dtf.nineteencustom.com/app/packages/worker/.env`:
 ```
 DATABASE_URL="mysql://print19:<password-fuerte>@localhost:3306/print19"
 REDIS_URL="redis://localhost:6379"
 AI_SERVICE_URL="http://localhost:8000"
-STORAGE_DIR="/var/lib/19print/storage"
+STORAGE_DIR="/home/dtf.nineteencustom.com/storage"
 WORKER_CONCURRENCY=1
 ```
 
-`/opt/19print-app/packages/ai-service/.env`:
+`/home/dtf.nineteencustom.com/app/packages/ai-service/.env`:
 ```
 MAX_LADO_PX=4000
 REMBG_MODEL=u2netp
 UPSCALE_SCALE=2
 ```
 
-Storage fuera del repo, con permisos para el usuario de servicio:
+Redis en este server es compartido con otras apps (`ntmsg-app`) — el
+warning "Eviction policy is allkeys-lru. It should be noeviction" en los
+logs de PM2 es de la config global del Redis del server, no de esta app; se
+puede ignorar salvo que empiece a perder jobs de BullMQ por presión de
+memoria.
+
+Storage fuera del repo:
 ```bash
-sudo mkdir -p /var/lib/19print/storage/{originales,procesadas,exports}
-sudo chown -R www-data:www-data /var/lib/19print/storage
+mkdir -p /home/dtf.nineteencustom.com/storage/{originales,procesadas,exports}
 ```
 
-## 5. Migraciones + seed
+## 6. Migraciones + seed
 
 ```bash
-cd /opt/19print-app/packages/backend
+cd /home/dtf.nineteencustom.com/app/packages/backend
 npx prisma migrate deploy
 npx prisma generate
 SEED_ADMIN_EMAIL="admin@tudominio.com" npm run seed
 ```
 
-## 6. Microservicio de IA (Python)
+## 7. Microservicio de IA (Python)
 
 ```bash
-cd /opt/19print-app/packages/ai-service
+cd /home/dtf.nineteencustom.com/app/packages/ai-service
 python3.12 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 deactivate
 
-mkdir -p bin/ubuntu
+mkdir -p bin/linux
 curl -sL "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip" -o /tmp/re.zip
-unzip -o /tmp/re.zip -d bin/ubuntu
-chmod +x bin/ubuntu/realesrgan-ncnn-vulkan
+unzip -o /tmp/re.zip -d bin/linux
+chmod +x bin/linux/realesrgan-ncnn-vulkan
 ```
 
-(`app/config.py` autodetecta `bin/ubuntu` en Linux vs `bin/macos` en macOS,
-no hace falta tocar código.)
+(El zip de la release dice "ubuntu" en el nombre pero es un binario
+prebuilt genérico de Linux x86_64 — corre igual en AlmaLinux, no hace falta
+compilarlo aparte. `app/config.py` autodetecta `bin/linux` en Linux vs
+`bin/macos` en macOS.)
 
-## 7. Frontend (build estático)
+## 8. Frontend (build estático)
 
 ```bash
-cd /opt/19print-app/packages/frontend
+cd /home/dtf.nineteencustom.com/app/packages/frontend
 npm run build   # genera dist/
+rsync -a --delete --exclude='.htaccess' dist/ /home/dtf.nineteencustom.com/public_html/
 ```
 
-## 8. systemd (backend, worker, ai-service)
+El `.htaccess` de `public_html` se excluye a propósito del rsync: es el que
+vive versionado en `infra/dtf-litespeed/htaccess`, no el que genera Vite.
 
-`/etc/systemd/system/19print-backend.service`:
-```ini
-[Unit]
-Description=19print backend
-After=network.target mysql.service redis-server.service
+## 9. PM2 (backend, worker, ai-service)
 
-[Service]
-Type=simple
-User=www-data
-WorkingDirectory=/opt/19print-app/packages/backend
-ExecStart=/usr/bin/node src/server.js
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-```
-
-`/etc/systemd/system/19print-worker.service`:
-```ini
-[Unit]
-Description=19print worker (BullMQ)
-After=network.target redis-server.service 19print-ai.service
-
-[Service]
-Type=simple
-User=www-data
-WorkingDirectory=/opt/19print-app/packages/worker
-ExecStart=/usr/bin/node src/index.js
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-```
-
-`/etc/systemd/system/19print-ai.service`:
-```ini
-[Unit]
-Description=19print ai-service (FastAPI)
-After=network.target
-
-[Service]
-Type=simple
-User=www-data
-WorkingDirectory=/opt/19print-app/packages/ai-service
-ExecStart=/opt/19print-app/packages/ai-service/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-```
+No hay `ecosystem.config.js` — los tres procesos se registraron a mano.
+Para levantarlos por primera vez en un server nuevo:
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now 19print-ai 19print-backend 19print-worker
-sudo systemctl status 19print-backend 19print-worker 19print-ai
+cd /home/dtf.nineteencustom.com/app/packages/backend && pm2 start src/server.js --name dtf-backend
+cd /home/dtf.nineteencustom.com/app/packages/worker  && pm2 start src/index.js  --name dtf-worker
+cd /home/dtf.nineteencustom.com/app/packages/ai-service && pm2 start venv/bin/uvicorn --name dtf-ai --interpreter none -- app.main:app --host 127.0.0.1 --port 8000
+
+pm2 save              # persiste la lista para el próximo reinicio del server
+pm2 startup systemd   # solo la primera vez -- registra pm2-root.service
 ```
 
-## 9. Nginx + SSL
-
-`/etc/nginx/sites-available/19print`:
-```nginx
-server {
-    listen 80;
-    server_name tu-dominio.com;
-
-    # 2048M por los lienzos ya armados subidos directo (routes/lienzos.js
-    # POST /lienzos/subir-listo): sin tope de tamaño a propósito, se
-    # descargan tal cual en la PC de producción, nunca se procesan acá. El
-    # resto de las subidas (imágenes de proyecto) igual quedan cubiertas por
-    # su propio límite de multer (100MB), más chico.
-    client_max_body_size 2048M;
-
-    root /opt/19print-app/packages/frontend/dist;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:4000/api/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        # Subidas grandes en conexiones lentas (VPS, no siempre buena
-        # conectividad del lado del usuario): el timeout default de nginx
-        # (60s) corta la subida a mitad de camino antes de que termine.
-        proxy_read_timeout 600s;
-        proxy_send_timeout 600s;
-        # No bufferear el body completo en nginx antes de mandarlo a Node:
-        # para un archivo de cientos de MB, evita duplicar ese uso de disco
-        # y que el upload no arranque a fluir hasta que nginx lo termine de
-        # recibir entero.
-        proxy_request_buffering off;
-    }
-}
-```
-
-```bash
-sudo ln -s /etc/nginx/sites-available/19print /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d tu-dominio.com
-```
+Para un redeploy normal alcanza con `pm2 restart <nombre>` (paso 11).
 
 ## 10. Firewall
 
-```bash
-sudo ufw allow OpenSSH
-sudo ufw allow 'Nginx Full'
-sudo ufw enable
-```
-
-MySQL, Redis, el backend (4000) y el ai-service (8000) quedan solo en
-`localhost` — no exponer esos puertos al exterior.
+MySQL (3306), Redis (6379), el backend (4000) y el ai-service (8000) quedan
+solo en `localhost` — no exponer esos puertos al exterior. El firewall del
+server ya lo gestiona CyberPanel (CSF), no hace falta tocarlo para esta app.
 
 ## 11. Redeploy (cambios futuros)
 
 ```bash
-cd /opt/19print-app
+cd /home/dtf.nineteencustom.com/app
 git pull
-npm install --omit=dev
+npm install                                    # con dev deps, ver §3
 npx prisma migrate deploy --schema packages/backend/prisma/schema.prisma
+npx prisma generate --schema packages/backend/prisma/schema.prisma
 npm run build -w packages/frontend
-sudo systemctl restart 19print-backend 19print-worker 19print-ai
+rsync -a --delete --exclude='.htaccess' packages/frontend/dist/ /home/dtf.nineteencustom.com/public_html/
+pm2 restart dtf-backend dtf-worker dtf-ai      # o solo el que corresponda al cambio
 ```
 
 ## Pendientes (igual que en CONTEXTO.md §10)
@@ -262,3 +204,4 @@ sudo systemctl restart 19print-backend 19print-worker 19print-ai
 - Migrar storage de disco local a Backblaze B2/Wasabi si el volumen lo justifica.
 - Perfil ICC a embeber en el PDF de sublimación.
 - Ajustar `WORKER_CONCURRENCY` según núcleos reales del VPS (arranca en 1).
+- Armar un `ecosystem.config.js` versionado para no depender de memoria/pm2 save al recrear los procesos.
