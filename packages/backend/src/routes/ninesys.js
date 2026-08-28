@@ -11,6 +11,8 @@ import {
 } from "../lib/ninesysApi.js";
 import { enviarWhatsapp } from "../lib/msgNinesys.js";
 import { encolarEntregaLienzo } from "../lib/entregas.js";
+import { buscarClientePorTelefono } from "../lib/clienteNinesys.js";
+import { normalizarTelefono } from "../lib/telefono.js";
 
 export const ninesysRouter = Router();
 ninesysRouter.use(requireAuth);
@@ -93,6 +95,28 @@ ninesysRouter.get("/:idEmpresa/clientes/auto", async (req, res) => {
     const candidatos = await buscarClientes(idEmpresa, cedula);
     const coincidencias = candidatos.filter((c) => (c.cedula ?? "").trim() === cedula);
     res.json({ cliente: coincidencias.length === 1 ? coincidencias[0] : null });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// Cuentas de cliente-por-teléfono (login nuevo, ver routes/auth.js): al
+// pedir presupuesto ya sabemos quién es por el teléfono de su cuenta -- se
+// busca su ficha real en la empresa elegida. No acepta un teléfono por
+// parámetro a propósito, solo resuelve el de la cuenta ya autenticada, para
+// no abrir una búsqueda arbitraria de clientes de Ninesys a cualquiera con
+// sesión. Puede devolver null: el login solo confirma que la persona es
+// cliente de AL MENOS una empresa, no necesariamente de la que se eligió acá
+// (si tiene cuenta en ambas, se puede pedir en cualquiera).
+ninesysRouter.get("/:idEmpresa/clientes/mi-registro", async (req, res) => {
+  const idEmpresa = idEmpresaDeParam(req, res);
+  if (idEmpresa === null) return;
+  try {
+    const usuario = await prisma.usuario.findUnique({ where: { id: req.usuarioId } });
+    const normalizado = normalizarTelefono(usuario?.telefono);
+    if (!normalizado) return res.json({ cliente: null });
+    const cliente = await buscarClientePorTelefono(idEmpresa, normalizado);
+    res.json({ cliente });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }

@@ -2,9 +2,12 @@
 import { computed, ref } from "vue";
 import { api } from "../lib/api.js";
 import { construirMensajeConfirmacion } from "../lib/mensajeWhatsapp.js";
+import { useAuthStore } from "../stores/auth.js";
 import PedidoEmpresaSelector from "./pedido/PedidoEmpresaSelector.vue";
 import PedidoServicioSelector from "./pedido/PedidoServicioSelector.vue";
 import PedidoClienteBuscador from "./pedido/PedidoClienteBuscador.vue";
+
+const auth = useAuthStore();
 
 // Uno o varios lienzos ya armados en UN mismo presupuesto: cada lienzo pasa
 // a ser una línea de producto separada (propia cantidad, propia tela si es
@@ -26,6 +29,7 @@ const cliente = ref(null);
 const enviando = ref(false);
 const resultado = ref(null); // { idPresupuesto, whatsappEnviado, whatsappMotivo? }
 const errorGeneral = ref("");
+const buscandoClientePropio = ref(false);
 
 // Metros crudos (sin redondear) por lienzo -- alto_usado_mm ya puede traer
 // decimales de sobra (ver el 3% de desperdicio en routes/lienzos.js).
@@ -53,9 +57,32 @@ function elegirEmpresa(id) {
   paso.value = "servicio";
 }
 
-function elegirServicio(s) {
+// Cuentas de cliente-por-teléfono (auth.usuario.telefono) ya son, por
+// definición, UN cliente real de Ninesys -- se salta el buscador manual
+// (pensado para admins pidiendo en nombre de cualquiera) y se resuelve su
+// propia ficha en la empresa elegida. Si no aparece (login solo garantiza
+// que es cliente de AL MENOS una de las dos, no de esta en particular) cae
+// al buscador de siempre, sin romper el flujo.
+async function elegirServicio(s) {
   servicio.value = s;
-  if (s) paso.value = "cliente";
+  if (!s) return;
+
+  if (auth.usuario?.telefono) {
+    buscandoClientePropio.value = true;
+    try {
+      const { data } = await api.get(`/ninesys/${idEmpresa.value}/clientes/mi-registro`);
+      if (data.cliente) {
+        confirmarCliente(data.cliente);
+        return;
+      }
+    } catch {
+      // silencioso -- si falla, sigue el flujo manual como cualquier cuenta admin
+    } finally {
+      buscandoClientePropio.value = false;
+    }
+  }
+
+  paso.value = "cliente";
 }
 
 function confirmarCliente(c) {
@@ -135,6 +162,8 @@ async function enviarPedido() {
       <PedidoEmpresaSelector :id-empresa="idEmpresa" @seleccionar="elegirEmpresa" />
 
       <PedidoServicioSelector v-if="idEmpresa && paso !== 'empresa'" :id-empresa="idEmpresa" @seleccionar="elegirServicio" />
+
+      <p v-if="buscandoClientePropio" class="text-sm text-np-ink/40">Verificando tus datos…</p>
 
       <PedidoClienteBuscador
         v-if="servicio && (paso === 'cliente' || paso === 'confirmar')"

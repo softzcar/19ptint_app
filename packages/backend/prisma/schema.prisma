@@ -54,7 +54,15 @@ model Usuario {
   // Se usa tal cual como "nombre y apellido" — así lo pide también el
   // agente de WhatsApp de Ninesys en un solo campo.
   nombre         String     @db.VarChar(100)
-  email          String     @unique @db.VarChar(150)
+  // Opcional desde que existe el login de clientes por teléfono: una cuenta
+  // tiene UNO de los dos (nunca ninguno) -- email para admin/staff, telefono
+  // para clientes. No son intercambiables: el login de cada uno solo mira
+  // su propio campo (ver routes/auth.js).
+  email          String?    @unique @db.VarChar(150)
+  // E.164 sin '+' (ver lib/telefono.js). Nunca se sincroniza con Ninesys: es
+  // la copia congelada del momento en que se le dio acceso a esta app, no
+  // una réplica en vivo de sus datos de cliente.
+  telefono       String?    @unique @db.VarChar(20)
   password_hash  String     @db.VarChar(255)
   rol            Rol        @default(cliente)
   activo         Boolean    @default(true)
