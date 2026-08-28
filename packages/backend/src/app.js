@@ -8,6 +8,7 @@ import { lienzosRouter } from "./routes/lienzos.js";
 import { adminRouter } from "./routes/admin.js";
 import { ninesysRouter } from "./routes/ninesys.js";
 import { agenteRouter } from "./routes/agente.js";
+import { integracionRouter } from "./routes/integracion.js";
 
 export function crearApp() {
   const app = express();
@@ -22,6 +23,9 @@ export function crearApp() {
   // cortarían el request del agente antes de que llegue acá. El agente usa
   // su propio carril de auth por token de empresa.
   app.use("/api/agente", agenteRouter);
+  // Mismo motivo que el agente: carril de auth propio (token de servicio),
+  // no el JWT de usuario -- quien llama es ninesys-api, no una persona.
+  app.use("/api/integracion", integracionRouter);
   app.use("/api/proyectos", proyectosRouter);
   app.use("/api", imagenesRouter);
   app.use("/api", lienzosRouter);
