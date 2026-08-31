@@ -143,7 +143,7 @@ async function subirTodo() {
           Sublimación
         </button>
       </div>
-      <p class="text-xs text-np-ink/40">DTF solo acepta PNG · Sublimación acepta PDF o JPEG.</p>
+      <p class="text-xs text-np-ink/40">DTF solo acepta PNG · Sublimación acepta PDF, JPEG o PNG.</p>
     </div>
 
     <div v-if="archivos.length" class="grid grid-cols-2 sm:grid-cols-3 gap-3">

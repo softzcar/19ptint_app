@@ -19,6 +19,12 @@ lienzosRouter.use(requireAuth);
 const ANCHOS_VALIDOS = { dtf: [280, 580], sublimacion: [1580] };
 const FORMATOS_VALIDOS = { dtf: ["png"], sublimacion: ["pdf", "jpeg"] };
 
+// Solo para "subir lienzo listo" (ver más abajo): a diferencia del export del
+// motor de acomodo, acá el archivo no lo genera esta app sino que llega tal
+// cual del diseñador, así que además de PDF/JPEG se acepta PNG también para
+// sublimación (por ej. diseños con transparencia armados afuera).
+const FORMATOS_VALIDOS_LISTO = { dtf: ["png"], sublimacion: ["pdf", "jpeg", "png"] };
+
 function validarConfigLienzo(tipo, ancho_mm, formato_exportacion) {
   if (!["dtf", "sublimacion"].includes(tipo)) {
     return "tipo debe ser 'dtf' o 'sublimacion'";
@@ -319,13 +325,14 @@ lienzosRouter.post(
       await limpiarTemporal();
       return res.status(400).json({ error: "Formato no soportado: suba un PNG, JPEG o PDF." });
     }
-    // Mismo emparejamiento tipo/formato que el resto de la app (CONTEXTO.md
-    // §2/§4): el software de la impresora de cada tipo espera un formato
-    // puntual, no cualquiera de los tres.
-    if (!FORMATOS_VALIDOS[tipo].includes(formato_exportacion)) {
+    // Emparejamiento tipo/formato específico de este endpoint (ver
+    // FORMATOS_VALIDOS_LISTO): más laxo que el resto de la app porque el
+    // archivo no lo genera el motor de acomodo, así que sublimación también
+    // acepta PNG.
+    if (!FORMATOS_VALIDOS_LISTO[tipo].includes(formato_exportacion)) {
       await limpiarTemporal();
       return res.status(400).json({
-        error: `Para ${tipo} el archivo debe ser ${FORMATOS_VALIDOS[tipo].join(" o ").toUpperCase()}.`,
+        error: `Para ${tipo} el archivo debe ser ${FORMATOS_VALIDOS_LISTO[tipo].join(" o ").toUpperCase()}.`,
       });
     }
 
