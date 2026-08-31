@@ -147,36 +147,39 @@ ninesysRouter.put("/:idEmpresa/clientes/:id", async (req, res) => {
   }
 });
 
-// presupuestos_productos.cantidad es INTEGER en ninesys-api (Postgres, ver
-// crearPresupuesto en ninesysApi.js, que además fuerza Math.ceil por las
-// dudas) -- no puede facturar fracciones de metro directo. Redondear al
-// metro entero sobrefacturaba de más: 3.001m pasaba a cobrarse como 4
-// metros completos (+33%), no como los ~3.1m reales. Se factura en
-// DECÍMETROS (0.1m) en vez de metros: sigue siendo un entero válido para
-// Ninesys, pero 3.001m redondea a 31 decímetros (3.1m), no a 4 metros.
-const DECIMETROS_POR_METRO = 10;
-
+// presupuestos_productos.cantidad era INTEGER en ninesys-api -- no admitía
+// fracciones de metro, así que esto facturaba en "decímetros" (cantidad x10,
+// precio /10) para esquivar la restricción. Ese truco era invisible para el
+// resto de Ninesys: el catálogo de servicios etiqueta sus tramos de precio en
+// METROS ("más de 20 metros", etc.) y ordenes_productos.cantidad ya admitía
+// decimales -- cualquiera que abriera el presupuesto en app_multi veía un
+// precio y una cantidad sin sentido (ej. "25 unidades a $0.40" en vez de "2.5
+// metros a $4.00/metro"), aunque el TOTAL diera correcto (bug real, hallado
+// 2026-08-31). Corregido de raíz: la columna ahora es DECIMAL(6,1) (mismo
+// esquema que ordenes_productos), así que se factura en metros reales.
 function redondearCentavos(n) {
   return Math.round(n * 100) / 100;
 }
 
-// Un lienzo -> una línea de producto del presupuesto: cantidad (decímetros)
-// y precio unitario (precio/10, para que cantidad*precio siga dando el
-// total correcto) salen de ESE lienzo puntual -- cada uno pudo subirse con
-// su propia tela (sublimación) y su propio largo.
+// Un lienzo -> una línea de producto del presupuesto: cantidad (metros, al
+// décimo hacia arriba) y precio unitario real (el que ya eligió el admin)
+// salen de ESE lienzo puntual -- cada uno pudo subirse con su propia tela
+// (sublimación) y su propio largo. Redondear al décimo hacia arriba (no al
+// metro entero) evita sobrefacturar: 3.001m pasa a cobrarse como 3.1m, no
+// como 4 metros completos.
 function lineaProducto(lienzo, servicio) {
-  const cantidadDecimetros = Math.ceil((Number(lienzo.alto_usado_mm) / 1000) * DECIMETROS_POR_METRO);
-  const precioDecimetro = redondearCentavos(Number(servicio.precio) / DECIMETROS_POR_METRO);
+  const cantidadMetros = Math.ceil((Number(lienzo.alto_usado_mm) / 1000) * 10) / 10;
+  const precio = Number(servicio.precio);
   return {
     categoria: servicio.categoria ?? 0,
     talla: "Talla única",
     tela: lienzo.tela?.trim() || "No aplica",
     corte: "No aplica",
-    precio: precioDecimetro,
+    precio,
     producto: servicio.name,
     cod: servicio.cod,
-    cantidad: cantidadDecimetros,
-    _subtotal: precioDecimetro * cantidadDecimetros,
+    cantidad: cantidadMetros,
+    _subtotal: redondearCentavos(precio * cantidadMetros),
   };
 }
 

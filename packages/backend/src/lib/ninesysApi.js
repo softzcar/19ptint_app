@@ -91,14 +91,17 @@ export async function getVendedorSugerido(idEmpresa, phone) {
 // POST /presupuesto/nuevo -- form-urlencoded. OJO: pese a que el endpoint
 // hace json_decode() sobre casi todos los campos, el uso real dentro del
 // handler es inconsistente -- `cliente_nombre` (nombre+apellido),
-// `observaciones` (obs) y `fecha_entrega` (fechaEntrega) se insertan con el
-// valor CRUDO del form, no con el resultado de json_decode() (confirmado
-// end-to-end contra Dev: si se mandan entre comillas JSON, las comillas
-// literales terminan en la fila). `cedula` sí pasa por json_decode() y
-// necesita ir citada. `cantidad` de cada producto debe ser un entero --
-// presupuestos_productos.cantidad es INTEGER en Postgres, un decimal tira
-// 500 (confirmado end-to-end); se redondea hacia arriba (se factura el
-// metro completo, práctica estándar de imprenta).
+// `observaciones` (obs), `fecha_entrega` (fechaEntrega) y `cliente_direccion`
+// (direccion) se insertan con el valor CRUDO del form, no con el resultado de
+// json_decode() (confirmado end-to-end contra Dev: si se mandan entre
+// comillas JSON, las comillas literales terminan en la fila; si se mandan
+// sin comillas -- como direccion hasta el 2026-08-31 -- json_decode() falla
+// en silencio y el campo queda vacío, bug real ya corregido del lado de
+// ninesys-api). `cedula` sí pasa por json_decode() y necesita ir citada.
+// `cantidad` de cada producto ya viene en metros reales (al décimo, ver
+// lineaProducto() en routes/ninesys.js) -- presupuestos_productos.cantidad
+// pasó a ser DECIMAL(6,1) en ninesys-api (2026-08-31), ya no hace falta
+// forzar un entero acá.
 export async function crearPresupuesto(idEmpresa, payload) {
   const form = new URLSearchParams();
   form.set("id", "null");
@@ -109,10 +112,7 @@ export async function crearPresupuesto(idEmpresa, payload) {
   form.set("email", payload.email ?? "");
   form.set("direccion", payload.direccion ?? "");
   form.set("fechaEntrega", payload.fechaEntrega);
-  form.set(
-    "productos",
-    JSON.stringify(payload.productos.map((p) => ({ ...p, cantidad: Math.ceil(Number(p.cantidad)) })))
-  );
+  form.set("productos", JSON.stringify(payload.productos));
   form.set("obs", payload.obs ?? "");
   form.set("total", String(payload.total));
   form.set("abono", "0");
