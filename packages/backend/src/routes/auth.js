@@ -93,7 +93,7 @@ authRouter.post("/solicitar-clave", async (req, res) => {
 
   const pin = String(randomInt(0, 1_000_000)).padStart(6, "0");
   const mensaje = [
-    "Hola, esta es su clave de acceso a Nineteen Print (dtf.nineteencustom.com):",
+    "Hola, esta es su clave de acceso a Nineteen Print (dtf.ninesys19.com):",
     "",
     pin,
     "",

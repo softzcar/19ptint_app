@@ -1,9 +1,9 @@
-# Configuración de LiteSpeed para dtf.nineteencustom.com
+# Configuración de LiteSpeed para dtf.ninesys19.com
 
 Copias de referencia de dos archivos que viven en el servidor, **fuera** del
 directorio de la app (`git pull` no los toca ni los despliega):
 
-- `vhost.conf` → `/usr/local/lsws/conf/vhosts/dtf.nineteencustom.com/vhost.conf`
+- `vhost.conf` → `/usr/local/lsws/conf/vhosts/dtf.ninesys19.com/vhost.conf`
 - `htaccess` → `public_html/.htaccess` (renombrado sin el punto inicial para
   que no quede oculto ni lo ignore ninguna herramienta)
 

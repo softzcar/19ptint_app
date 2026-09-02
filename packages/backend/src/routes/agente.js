@@ -11,6 +11,12 @@ export const agenteRouter = Router();
 // servidor para poder ajustarlo sin reinstalar los agentes.
 const INTERVALO_SUGERIDO_SEG = 20;
 
+// URL con la que el agente debe hablar de ahora en adelante. Viajó de
+// dtf.nineteencustom.com a dtf.ninesys19.com en la migración de dominio de
+// 2026-09; mandarla acá permite que una mudanza de dominio futura no
+// necesite reinstalar nada en las PCs (ver src/config.js del agente).
+const SERVIDOR_URL_ACTUAL = process.env.AGENTE_SERVIDOR_URL || "https://dtf.ninesys19.com";
+
 /**
  * Carril de autenticación propio de los agentes de escritorio, separado del
  * JWT de usuario (lib/auth.js): el agente es una máquina, no una persona, y
@@ -47,6 +53,7 @@ agenteRouter.get("/config", (req, res) => {
   res.json({
     empresa: req.agente.nombre,
     intervaloSegundos: INTERVALO_SUGERIDO_SEG,
+    servidorUrl: SERVIDOR_URL_ACTUAL,
   });
 });
 

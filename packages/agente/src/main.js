@@ -135,6 +135,14 @@ app.whenReady().then(async () => {
     try {
       const info = await sinc.verificarConexion();
       intervaloSeg = info.intervaloSegundos ?? 20;
+      // El servidor puede sugerir una URL nueva (ver GET /api/agente/config)
+      // -- así una futura mudanza de dominio se autocorrige sola en el
+      // próximo arranque de cada PC, sin tener que reinstalar ni retocar la
+      // configuración a mano.
+      if (info.servidorUrl && info.servidorUrl !== config.servidorUrl) {
+        const actualizado = await guardarConfig({ servidorUrl: info.servidorUrl });
+        sinc.configurar(actualizado);
+      }
     } catch (err) {
       console.error("[agente] no se pudo verificar la conexión:", err.message);
     }

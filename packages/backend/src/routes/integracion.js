@@ -46,7 +46,7 @@ integracionRouter.post("/clientes/generar-clave", async (req, res) => {
   const { idEmpresa, cliente } = empresas[0];
   const nombreCompleto = [cliente.first_name, cliente.last_name].filter(Boolean).join(" ").trim() || "Cliente";
   const mensaje = [
-    "Hola, esta es su clave de acceso a Nineteen Print (dtf.nineteencustom.com):",
+    "Hola, esta es su clave de acceso a Nineteen Print (dtf.ninesys19.com):",
     "",
     pin,
     "",

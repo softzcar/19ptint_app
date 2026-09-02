@@ -1,7 +1,7 @@
 # Deploy al VPS
 
 Guía para mover la app (ya probada en local, ver README.md) al VPS real donde
-corre hoy: `dtf.nineteencustom.com`, en el mismo servidor Contabo que aloja
+corre hoy: `dtf.ninesys19.com`, en el mismo servidor Contabo que aloja
 `ninesys-api`/`app_multi` en Producción (`vps-contabo-prod`, ver
 `ninesys-hub`). **No es Ubuntu**: es AlmaLinux 9 con CyberPanel/OpenLiteSpeed
 ya instalado de antes para los otros vhosts — todo lo de acá asume eso, no un
@@ -47,7 +47,7 @@ dnf install -y nodejs   # o apt install -y nodejs, según el sistema
 
 ## 2. Vhost (OpenLiteSpeed, no nginx)
 
-El vhost real (`/home/dtf.nineteencustom.com`) lo crea CyberPanel desde su
+El vhost real (`/home/dtf.ninesys19.com`) lo crea CyberPanel desde su
 panel (Website > Create Website), apuntando el document root a
 `public_html`. La configuración de headers/caché y el `.htaccess` que
 realmente aplican quedan documentados y versionados en
@@ -58,8 +58,8 @@ ahí.
 ## 3. Clonar y preparar el código
 
 ```bash
-git clone git@github.com:softzcar/19ptint_app.git /home/dtf.nineteencustom.com/app
-cd /home/dtf.nineteencustom.com/app
+git clone git@github.com:softzcar/19ptint_app.git /home/dtf.ninesys19.com/app
+cd /home/dtf.ninesys19.com/app
 npm install   # con dev deps: hacen falta para "npm run build" del frontend (vite).
               # `npm install --omit=dev` rompe el build del frontend -- si se
               # necesita algo más liviano para el backend en runtime, instalar
@@ -83,30 +83,30 @@ database.)
 
 ## 5. Variables de entorno
 
-`/home/dtf.nineteencustom.com/app/packages/backend/.env`:
+`/home/dtf.ninesys19.com/app/packages/backend/.env`:
 ```
 DATABASE_URL="mysql://print19:<password-fuerte>@localhost:3306/print19"
 JWT_SECRET="<generar con: openssl rand -hex 32>"
 PORT=4000
 REDIS_URL="redis://localhost:6379"
-CORS_ORIGIN="https://dtf.nineteencustom.com"
-STORAGE_DIR="/home/dtf.nineteencustom.com/storage"
+CORS_ORIGIN="https://dtf.ninesys19.com"
+STORAGE_DIR="/home/dtf.ninesys19.com/storage"
 PEXELS_API_KEY="<key de pexels.com/api>"
 NINESYS_API_URL="https://api.nineteengreen.com"   # Ninesys Dev (Postgres) -- ver CONTEXTO.md, la integración corre contra Dev, no contra Prod de Ninesys.
 MSG_NINESYS_URL="<url del servicio de WhatsApp>"
 MSG_NINESYS_DTF_TOKEN="<token de esta app en msg_ninesys>"
 ```
 
-`/home/dtf.nineteencustom.com/app/packages/worker/.env`:
+`/home/dtf.ninesys19.com/app/packages/worker/.env`:
 ```
 DATABASE_URL="mysql://print19:<password-fuerte>@localhost:3306/print19"
 REDIS_URL="redis://localhost:6379"
 AI_SERVICE_URL="http://localhost:8000"
-STORAGE_DIR="/home/dtf.nineteencustom.com/storage"
+STORAGE_DIR="/home/dtf.ninesys19.com/storage"
 WORKER_CONCURRENCY=1
 ```
 
-`/home/dtf.nineteencustom.com/app/packages/ai-service/.env`:
+`/home/dtf.ninesys19.com/app/packages/ai-service/.env`:
 ```
 MAX_LADO_PX=4000
 REMBG_MODEL=u2netp
@@ -121,13 +121,13 @@ memoria.
 
 Storage fuera del repo:
 ```bash
-mkdir -p /home/dtf.nineteencustom.com/storage/{originales,procesadas,exports}
+mkdir -p /home/dtf.ninesys19.com/storage/{originales,procesadas,exports}
 ```
 
 ## 6. Migraciones + seed
 
 ```bash
-cd /home/dtf.nineteencustom.com/app/packages/backend
+cd /home/dtf.ninesys19.com/app/packages/backend
 npx prisma migrate deploy
 npx prisma generate
 SEED_ADMIN_EMAIL="admin@tudominio.com" npm run seed
@@ -136,29 +136,32 @@ SEED_ADMIN_EMAIL="admin@tudominio.com" npm run seed
 ## 7. Microservicio de IA (Python)
 
 ```bash
-cd /home/dtf.nineteencustom.com/app/packages/ai-service
+cd /home/dtf.ninesys19.com/app/packages/ai-service
 python3.12 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 deactivate
 
-mkdir -p bin/linux
+mkdir -p bin/ubuntu
 curl -sL "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip" -o /tmp/re.zip
-unzip -o /tmp/re.zip -d bin/linux
-chmod +x bin/linux/realesrgan-ncnn-vulkan
+unzip -o /tmp/re.zip -d bin/ubuntu
+chmod +x bin/ubuntu/realesrgan-ncnn-vulkan
 ```
 
 (El zip de la release dice "ubuntu" en el nombre pero es un binario
 prebuilt genérico de Linux x86_64 — corre igual en AlmaLinux, no hace falta
-compilarlo aparte. `app/config.py` autodetecta `bin/linux` en Linux vs
-`bin/macos` en macOS.)
+compilarlo aparte. `app/config.py` autodetecta la carpeta según
+`platform.system()`: `bin/macos` en macOS, `bin/ubuntu` en cualquier otro
+caso -- incluido Linux. OJO: una versión anterior de este documento decía
+`bin/linux`, que es la carpeta EQUIVOCADA y deja el upscale roto en
+silencio; usar siempre `bin/ubuntu`.)
 
 ## 8. Frontend (build estático)
 
 ```bash
-cd /home/dtf.nineteencustom.com/app/packages/frontend
+cd /home/dtf.ninesys19.com/app/packages/frontend
 npm run build   # genera dist/
-rsync -a --delete --exclude='.htaccess' dist/ /home/dtf.nineteencustom.com/public_html/
+rsync -a --delete --exclude='.htaccess' dist/ /home/dtf.ninesys19.com/public_html/
 ```
 
 El `.htaccess` de `public_html` se excluye a propósito del rsync: es el que
@@ -170,9 +173,13 @@ No hay `ecosystem.config.js` — los tres procesos se registraron a mano.
 Para levantarlos por primera vez en un server nuevo:
 
 ```bash
-cd /home/dtf.nineteencustom.com/app/packages/backend && pm2 start src/server.js --name dtf-backend
-cd /home/dtf.nineteencustom.com/app/packages/worker  && pm2 start src/index.js  --name dtf-worker
-cd /home/dtf.nineteencustom.com/app/packages/ai-service && pm2 start venv/bin/uvicorn --name dtf-ai --interpreter none -- app.main:app --host 127.0.0.1 --port 8000
+# Si el Node por defecto del server no es 20.x (revisar con `node -v`), usar
+# --interpreter con la ruta explícita del binario de Node 20 (vía nvm) para
+# backend y worker -- ai-service no lleva --interpreter de Node, corre su
+# propio venv de Python.
+cd /home/dtf.ninesys19.com/app/packages/backend && pm2 start src/server.js --name dtf-backend --interpreter /root/.nvm/versions/node/v20.20.2/bin/node
+cd /home/dtf.ninesys19.com/app/packages/worker  && pm2 start src/index.js  --name dtf-worker  --interpreter /root/.nvm/versions/node/v20.20.2/bin/node
+cd /home/dtf.ninesys19.com/app/packages/ai-service && pm2 start venv/bin/uvicorn --name dtf-ai --interpreter none -- app.main:app --host 127.0.0.1 --port 8000
 
 pm2 save              # persiste la lista para el próximo reinicio del server
 pm2 startup systemd   # solo la primera vez -- registra pm2-root.service
@@ -189,13 +196,13 @@ server ya lo gestiona CyberPanel (CSF), no hace falta tocarlo para esta app.
 ## 11. Redeploy (cambios futuros)
 
 ```bash
-cd /home/dtf.nineteencustom.com/app
+cd /home/dtf.ninesys19.com/app
 git pull
 npm install                                    # con dev deps, ver §3
 npx prisma migrate deploy --schema packages/backend/prisma/schema.prisma
 npx prisma generate --schema packages/backend/prisma/schema.prisma
 npm run build -w packages/frontend
-rsync -a --delete --exclude='.htaccess' packages/frontend/dist/ /home/dtf.nineteencustom.com/public_html/
+rsync -a --delete --exclude='.htaccess' packages/frontend/dist/ /home/dtf.ninesys19.com/public_html/
 pm2 restart dtf-backend dtf-worker dtf-ai      # o solo el que corresponda al cambio
 ```
 
