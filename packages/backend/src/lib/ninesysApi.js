@@ -49,10 +49,22 @@ function encodeParam(v) {
 // respuesta cruda tiene forma distinta según el camino interno que tomó
 // createCustomer() en ninesys-api (alta nueva vs. reactivación de uno
 // eliminado con el mismo teléfono) -- se normaliza acá a un shape único.
-export async function crearCliente(idEmpresa, { first_name, last_name, cedula, phone, email, address }) {
+//
+// pais/estado/ciudad: PENDIENTE DE SINCRONIZAR -- el formulario real de alta
+// de cliente en Ninesys (app_multi) SÍ los pide como campos propios
+// (obligatorios, con Estado/Ciudad en cascada -- ver captura en
+// CONTEXTO.md), pero el contrato exacto de este endpoint /customers para
+// ellos (nombres de parámetro, orden, IDs vs nombres de catálogo) todavía no
+// está confirmado acá. Mientras tanto, para no perder el dato, se pliegan
+// como texto legible dentro de `address` (que sí es un campo real y libre) --
+// el llamador (routes/ninesys.js) además los guarda tal cual, estructurados,
+// en Lienzo.cliente_pais/estado/ciudad. Cuando se confirme el contrato real,
+// reemplazar este plegado por los parámetros reales.
+export async function crearCliente(idEmpresa, { first_name, last_name, cedula, phone, email, address, pais, estado, ciudad }) {
+  const direccionCompuesta = [address, ciudad, estado, pais].filter(Boolean).join(", ");
   const path =
     `/customers/${encodeParam(first_name)}/${encodeParam(last_name)}/${encodeParam(cedula)}` +
-    `/${encodeParam(phone)}/${encodeParam(email)}/${encodeParam(address)}`;
+    `/${encodeParam(phone)}/${encodeParam(email)}/${encodeParam(direccionCompuesta)}`;
   const { status, data } = await ninesysFetch(idEmpresa, path, { method: "POST" });
   if (status === 400 && data?.error === "phone_duplicate") {
     const err = new Error("Ya existe un cliente con ese teléfono");
@@ -63,7 +75,7 @@ export async function crearCliente(idEmpresa, { first_name, last_name, cedula, p
   if (status >= 300) throw new Error(`POST /customers respondió ${status}`);
 
   const id = data?.customer?.id ?? data?.resp_insert?.insert_id ?? null;
-  return { id, first_name, last_name, cedula, phone, email, address };
+  return { id, first_name, last_name, cedula, phone, email, address, pais, estado, ciudad };
 }
 
 export async function actualizarCliente(idEmpresa, id, { first_name, last_name, cedula, phone, email, address }) {

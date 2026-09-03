@@ -1,7 +1,8 @@
 <script setup>
-import { ref, watch, onMounted } from "vue";
+import { ref, watch, onMounted, computed } from "vue";
 import { api } from "../../lib/api.js";
 import { useAuthStore } from "../../stores/auth.js";
+import { PAISES, ESTADOS_POR_PAIS, CIUDADES_POR_ESTADO } from "../../lib/venezuelaGeo.js";
 
 const props = defineProps({ idEmpresa: { type: Number, required: true } });
 const emit = defineEmits(["confirmado"]);
@@ -39,6 +40,11 @@ const guardando = ref(false);
 const error = ref("");
 const errorDuplicado = ref(null); // { message, customer }
 
+// pais/estado/ciudad: PENDIENTE DE SINCRONIZAR con el contrato real de
+// Ninesys (POST /customers no los soporta todavía, ver CONTEXTO.md) --
+// mientras tanto viajan igual en el payload y el backend los guarda como
+// copia congelada en Lienzo.cliente_pais/estado/ciudad, más los pliega al
+// texto de "address" que sí llega a Ninesys, para no perder el dato.
 function vacio() {
   const [first_name, ...resto] = (auth.usuario?.nombre ?? "").split(" ");
   return {
@@ -49,8 +55,26 @@ function vacio() {
     phone: "",
     email: auth.usuario?.email ?? "",
     address: auth.usuario?.direccion ?? "",
+    pais: "Venezuela",
+    estado: "",
+    ciudad: "",
   };
 }
+
+const estadosDisponibles = computed(() => ESTADOS_POR_PAIS[form.value.pais] ?? []);
+const ciudadesDisponibles = computed(() => CIUDADES_POR_ESTADO[form.value.estado] ?? []);
+
+// Cambiar de estado invalida la ciudad ya elegida (es de OTRO estado) --
+// mismo comportamiento cascada que el formulario real de Ninesys (ver
+// captura en CONTEXTO.md).
+watch(
+  () => form.value.estado,
+  (nuevoEstado, anterior) => {
+    if (anterior !== undefined && form.value.ciudad && !CIUDADES_POR_ESTADO[nuevoEstado]?.includes(form.value.ciudad)) {
+      form.value.ciudad = "";
+    }
+  }
+);
 
 watch(texto, (valor) => {
   clearTimeout(debounceTimer);
@@ -79,6 +103,12 @@ function elegirExistente(cliente) {
     phone: cliente.phone ?? "",
     email: cliente.email ?? "",
     address: cliente.address ?? "",
+    // Ninesys no devuelve estos 3 todavía (ver nota de vacio() arriba) --
+    // un cliente ya existente en Ninesys arranca sin país/estado/ciudad
+    // hasta que el staff los complete acá.
+    pais: cliente.pais ?? "Venezuela",
+    estado: cliente.estado ?? "",
+    ciudad: cliente.ciudad ?? "",
   };
   resultados.value = [];
   texto.value = "";
@@ -160,6 +190,18 @@ function usarClienteDuplicado() {
         <input v-model="form.phone" placeholder="Teléfono (WhatsApp)" required class="border border-black/10 rounded-md px-2 py-1.5" />
         <input v-model="form.email" placeholder="Email" class="border border-black/10 rounded-md px-2 py-1.5" />
         <input v-model="form.address" placeholder="Dirección" class="border border-black/10 rounded-md px-2 py-1.5 sm:col-span-2" />
+
+        <select v-model="form.pais" class="border border-black/10 rounded-md px-2 py-1.5 bg-white">
+          <option v-for="p in PAISES" :key="p" :value="p">{{ p }}</option>
+        </select>
+        <select v-model="form.estado" class="border border-black/10 rounded-md px-2 py-1.5 bg-white">
+          <option value="" disabled>Seleccione un estado</option>
+          <option v-for="e in estadosDisponibles" :key="e" :value="e">{{ e }}</option>
+        </select>
+        <select v-model="form.ciudad" class="border border-black/10 rounded-md px-2 py-1.5 bg-white sm:col-span-2" :disabled="!form.estado">
+          <option value="" disabled>Seleccione una ciudad</option>
+          <option v-for="c in ciudadesDisponibles" :key="c" :value="c">{{ c }}</option>
+        </select>
       </div>
 
       <p v-if="errorDuplicado" class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
