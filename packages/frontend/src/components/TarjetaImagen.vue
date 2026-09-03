@@ -1,4 +1,6 @@
 <script setup>
+import BarraProgreso from "./ui/BarraProgreso.vue";
+
 const props = defineProps({
   img: { type: Object, required: true },
   store: { type: Object, required: true },
@@ -25,8 +27,9 @@ const props = defineProps({
       :src="store.previewUrls.value[img.id]"
       class="w-full h-32 object-contain bg-[conic-gradient(#e5e7eb_25%,white_0_50%,#e5e7eb_0_75%,white_0)] bg-[length:16px_16px] rounded-lg"
     />
-    <div v-else class="w-full h-32 flex items-center justify-center bg-np-paper rounded-lg text-sm text-np-ink/40">
-      {{ img.estado_fondo === "error" ? "Error quitando fondo" : "Quitando fondo…" }}
+    <div v-else class="w-full h-32 flex flex-col items-center justify-center gap-2 bg-np-paper rounded-lg px-4 text-sm text-np-ink/40">
+      <span v-if="img.estado_fondo === 'error'">Error quitando fondo</span>
+      <BarraProgreso v-else indeterminado etiqueta="Quitando fondo" class="w-full" />
     </div>
 
     <slot name="antes-nombre" :img="img" />
@@ -87,9 +90,12 @@ const props = defineProps({
     </p>
 
     <div class="flex items-center justify-between text-xs pt-1 border-t border-black/5">
-      <span v-if="store.progresoUpscale.value[img.id] !== undefined" class="text-np-ink/40">
-        Aumentando resolución… {{ store.progresoUpscale.value[img.id] }}%
-      </span>
+      <BarraProgreso
+        v-if="store.progresoUpscale.value[img.id] !== undefined"
+        class="flex-1"
+        :progreso="store.progresoUpscale.value[img.id].pct"
+        :etiqueta="store.progresoUpscale.value[img.id].fase === 'subiendo' ? 'Subiendo' : 'Aumentando resolución'"
+      />
       <span v-else-if="img.estado_fondo === 'listo' && store.dispositivoCompatible" class="flex items-center gap-2">
         <button
           class="text-np-teal font-medium hover:text-np-teal-dark transition-colors"

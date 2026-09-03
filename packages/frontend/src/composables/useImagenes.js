@@ -25,6 +25,7 @@ import { navegadorCompatible, upscalearEnCliente } from "../lib/upscaleCliente.j
 export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
   const imagenes = ref([]);
   const subiendo = ref(false);
+  const progresoSubida = ref(0);
   const error = ref("");
   const previewUrls = ref({});
   const previewCargados = new Set();
@@ -118,18 +119,23 @@ export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
   async function subirArchivosDesde(fileList) {
     if (!fileList?.length) return;
     subiendo.value = true;
+    progresoSubida.value = 0;
     error.value = "";
     try {
       const form = new FormData();
       for (const f of fileList) form.append("imagenes", f);
       await api.post(`/proyectos/${unref(proyectoId)}/imagenes`, form, {
         headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (e) => {
+          progresoSubida.value = e.total ? Math.round((e.loaded / e.total) * 100) : progresoSubida.value;
+        },
       });
       await cargar();
     } catch (e) {
       error.value = e.response?.data?.error ?? "Error al subir";
     } finally {
       subiendo.value = false;
+      progresoSubida.value = 0;
     }
   }
 
@@ -216,10 +222,10 @@ export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
   async function pedirUpscale(img) {
     const url = previewUrls.value[img.id];
     if (!url) return;
-    progresoUpscale.value = { ...progresoUpscale.value, [img.id]: 0 };
+    progresoUpscale.value = { ...progresoUpscale.value, [img.id]: { pct: 0, fase: "procesando" } };
     try {
-      await upscalearEnCliente(img.id, url, (rate) => {
-        progresoUpscale.value = { ...progresoUpscale.value, [img.id]: Math.round(rate * 100) };
+      await upscalearEnCliente(img.id, url, (rate, fase) => {
+        progresoUpscale.value = { ...progresoUpscale.value, [img.id]: { pct: Math.round(rate * 100), fase } };
       });
     } catch (e) {
       error.value = "No se pudo aumentar la resolución: " + (e.message ?? e);
@@ -281,6 +287,7 @@ export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
   return {
     imagenes,
     subiendo,
+    progresoSubida,
     error,
     previewUrls,
     alturasCm,

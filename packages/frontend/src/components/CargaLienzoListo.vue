@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, reactive } from "vue";
 import { api } from "../lib/api.js";
+import BarraProgreso from "./ui/BarraProgreso.vue";
 
 const props = defineProps({ proyectoId: { type: [String, Number], required: true } });
 const emit = defineEmits(["agregados"]);
@@ -55,6 +56,7 @@ function agregarArchivos(fileList) {
       preview: null,
       previewCargando: false,
       estado: "pendiente",
+      progreso: 0,
       errorMsg: "",
     });
     archivos.value = [...archivos.value, entrada];
@@ -90,6 +92,7 @@ async function subirTodo() {
   for (const entrada of archivos.value) {
     if (entrada.estado === "listo") continue; // ya subido en un intento anterior
     entrada.estado = "subiendo";
+    entrada.progreso = 0;
     entrada.errorMsg = "";
     try {
       const form = new FormData();
@@ -98,6 +101,9 @@ async function subirTodo() {
       if (tipo.value === "sublimacion" && entrada.tela.trim()) form.append("tela", entrada.tela.trim());
       const { data } = await api.post(`/proyectos/${props.proyectoId}/lienzos/subir-listo`, form, {
         headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (e) => {
+          entrada.progreso = e.total ? Math.round((e.loaded / e.total) * 100) : entrada.progreso;
+        },
       });
       entrada.estado = "listo";
       creados.push(data);
@@ -177,7 +183,7 @@ async function subirTodo() {
           class="w-full border border-black/10 rounded-md px-1.5 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-np-teal/40"
           :disabled="a.estado === 'subiendo' || a.estado === 'listo'"
         />
-        <p v-if="a.estado === 'subiendo'" class="text-[11px] text-np-ink/40">Subiendo…</p>
+        <BarraProgreso v-if="a.estado === 'subiendo'" etiqueta="Subiendo" :progreso="a.progreso" />
         <p v-else-if="a.estado === 'listo'" class="text-[11px] text-green-700">Subido ✓</p>
         <p v-else-if="a.estado === 'error'" class="text-[11px] text-red-600">{{ a.errorMsg }}</p>
       </div>

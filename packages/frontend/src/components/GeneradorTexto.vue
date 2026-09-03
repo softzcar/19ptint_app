@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, watch } from "vue";
 import { api } from "../lib/api.js";
+import BarraProgreso from "./ui/BarraProgreso.vue";
 
 const props = defineProps({ proyectoId: { type: [String, Number], required: true } });
 const emit = defineEmits(["agregada"]);
@@ -31,6 +32,7 @@ const offsetYSombra = ref(6);
 
 const canvasRef = ref(null);
 const agregando = ref(false);
+const progreso = ref(0);
 const error = ref("");
 let debounceId = null;
 
@@ -133,6 +135,7 @@ function recortar(canvas) {
 async function agregarAlProyecto() {
   if (!texto.value.trim()) return;
   agregando.value = true;
+  progreso.value = 0;
   error.value = "";
   try {
     await redibujar();
@@ -142,6 +145,9 @@ async function agregarAlProyecto() {
     form.append("imagen", blob, `texto-${Date.now()}.png`);
     await api.post(`/proyectos/${props.proyectoId}/imagenes/generada`, form, {
       headers: { "Content-Type": "multipart/form-data" },
+      onUploadProgress: (e) => {
+        progreso.value = e.total ? Math.round((e.loaded / e.total) * 100) : progreso.value;
+      },
     });
     emit("agregada");
   } catch (e) {
@@ -234,6 +240,7 @@ async function agregarAlProyecto() {
     </div>
 
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+    <BarraProgreso v-if="agregando" etiqueta="Agregando" :progreso="progreso" class="max-w-xs" />
     <button
       class="bg-np-teal hover:bg-np-teal-dark text-white font-bold text-sm uppercase tracking-wide px-5 py-2.5 rounded-lg transition-colors disabled:opacity-50"
       :disabled="agregando || !texto.trim()"

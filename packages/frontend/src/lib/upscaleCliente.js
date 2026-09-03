@@ -113,23 +113,28 @@ function escalarCanvas(canvasOrigen, ancho, alto) {
   return canvas;
 }
 
-async function subirResultado(imagenId, blob) {
+async function subirResultado(imagenId, blob, onProgress) {
   const form = new FormData();
   form.append("imagen", blob, "upscale.png");
   const { data } = await api.post(`/imagenes/${imagenId}/upscale-cliente`, form, {
     headers: { "Content-Type": "multipart/form-data" },
+    onUploadProgress: (e) => {
+      onProgress?.(e.total ? e.loaded / e.total : 0, "subiendo");
+    },
   });
   return data;
 }
 
 // imagenId: para subir el resultado con guardar("procesadas", ...) del lado
 // del backend. imagenUrl: de dónde traer los bytes ya sin fondo (variante
-// "procesada" de /imagenes/:id/archivo). onProgress: 0..1.
+// "procesada" de /imagenes/:id/archivo). onProgress(rate, fase): rate 0..1,
+// fase 'procesando' (modelo IA en el navegador) o 'subiendo' (upload del
+// resultado) -- dos tramos reales y distintos, no un solo progreso continuo.
 export async function upscalearEnCliente(imagenId, imagenUrl, onProgress) {
   const upscaler = await cargarUpscaler();
   const img = await cargarImagenDesdeSrc(imagenUrl);
 
-  const opciones = { patchSize: PATCH_SIZE, padding: PADDING, progress: (rate) => onProgress?.(rate) };
+  const opciones = { patchSize: PATCH_SIZE, padding: PADDING, progress: (rate) => onProgress?.(rate, "procesando") };
 
   const canvasOrigen = canvasDesde(img);
 
@@ -149,7 +154,7 @@ export async function upscalearEnCliente(imagenId, imagenUrl, onProgress) {
   if (!tieneTransparencia(canvasOrigen)) {
     const resultadoBase64 = await upscaler.upscale(img, opciones);
     const blob = await (await fetch(resultadoBase64)).blob();
-    return subirResultado(imagenId, blob);
+    return subirResultado(imagenId, blob, onProgress);
   }
 
   const rgbBase64 = await upscaler.upscale(componerSobreBlanco(canvasOrigen), opciones);
@@ -175,5 +180,5 @@ export async function upscalearEnCliente(imagenId, imagenUrl, onProgress) {
   finalCtx.putImageData(finalData, 0, 0);
 
   const blob = await new Promise((resolve) => finalCanvas.toBlob(resolve, "image/png"));
-  return subirResultado(imagenId, blob);
+  return subirResultado(imagenId, blob, onProgress);
 }

@@ -7,6 +7,7 @@ import PedidoWhatsApp from "../components/PedidoWhatsApp.vue";
 import EstadoEntrega from "../components/EstadoEntrega.vue";
 import CargaImagenes from "../components/CargaImagenes.vue";
 import TarjetaImagen from "../components/TarjetaImagen.vue";
+import BarraProgreso from "../components/ui/BarraProgreso.vue";
 
 const props = defineProps({ id: { type: [String, Number], required: true } });
 const router = useRouter();
@@ -15,6 +16,8 @@ const lienzo = ref(null);
 const imagenesPorId = ref({});
 const imagenesCargadas = ref({});
 const exportando = ref(false);
+const exportFase = ref("renderizando"); // 'renderizando' (POST /exportar, opaco) | 'descargando' (GET /descargar, con % real)
+const exportProgreso = ref(0);
 const error = ref("");
 
 const ANCHOS_DTF = [
@@ -189,14 +192,24 @@ async function onDragEnd(pieza, konvaEvent) {
 
 async function exportar() {
   exportando.value = true;
+  exportProgreso.value = 0;
   error.value = "";
   try {
     // Un lienzo subido ya armado (sin items) no tiene nada para
     // re-renderizar -- el archivo subido YA es el export, así que este botón
     // solo lo descarga (ver exportarLienzo.js, que rechaza re-exportar algo
     // sin piezas acomodadas).
-    if (lienzo.value.items.length) await api.post(`/lienzos/${props.id}/exportar`);
-    const resp = await api.get(`/lienzos/${props.id}/descargar`, { responseType: "blob" });
+    if (lienzo.value.items.length) {
+      exportFase.value = "renderizando"; // llamada opaca y síncrona del lado del servidor, sin señal de avance real
+      await api.post(`/lienzos/${props.id}/exportar`);
+    }
+    exportFase.value = "descargando";
+    const resp = await api.get(`/lienzos/${props.id}/descargar`, {
+      responseType: "blob",
+      onDownloadProgress: (e) => {
+        exportProgreso.value = e.total ? Math.round((e.loaded / e.total) * 100) : exportProgreso.value;
+      },
+    });
     const ext = lienzo.value.formato_exportacion === "pdf" ? "pdf" : lienzo.value.formato_exportacion === "jpeg" ? "jpeg" : "png";
     const url = URL.createObjectURL(resp.data);
     const a = document.createElement("a");
@@ -269,16 +282,19 @@ onUnmounted(() => clearInterval(intervaloFondo));
         >
           Editar / re-acomodar
         </button>
+        <div v-if="exportando" class="w-40">
+          <BarraProgreso
+            :indeterminado="exportFase === 'renderizando'"
+            :progreso="exportProgreso"
+            :etiqueta="exportFase === 'renderizando' ? 'Renderizando' : 'Descargando'"
+          />
+        </div>
         <button
+          v-else
           class="bg-np-teal hover:bg-np-teal-dark text-white font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
-          :disabled="exportando"
           @click="exportar"
         >
-          {{
-            exportando
-              ? "Descargando..."
-              : `${lienzo.items.length ? "Exportar" : "Descargar"} ${lienzo.formato_exportacion.toUpperCase()}`
-          }}
+          {{ `${lienzo.items.length ? "Exportar" : "Descargar"} ${lienzo.formato_exportacion.toUpperCase()}` }}
         </button>
         <button class="text-red-600/70 hover:text-red-600 text-sm transition-colors" @click="eliminarLienzo">Eliminar lienzo</button>
       </div>
