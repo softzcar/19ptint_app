@@ -167,13 +167,21 @@ function redondearCentavos(n) {
 // (sublimación) y su propio largo. Redondear al décimo hacia arriba (no al
 // metro entero) evita sobrefacturar: 3.001m pasa a cobrarse como 3.1m, no
 // como 4 metros completos.
+//
+// talla/tela van SIEMPRE en "No aplica", nunca el texto real (ej. "Talla
+// única" o la tela que escribió el cliente): app_multi (nueva.vue) hace
+// `Number(p.talla)`/`Number(p.tela)` sobre lo que no sea exactamente "No
+// aplica", y cualquier texto real da NaN -- el selector queda roto/vacío en
+// la orden. Estos servicios por metraje no tienen talla real, y la tela (si
+// el cliente la indicó) se manda aparte en las observaciones del presupuesto
+// (ver notaTela más abajo), donde el staff SÍ la ve como texto libre.
 function lineaProducto(lienzo, servicio) {
   const cantidadMetros = Math.ceil((Number(lienzo.alto_usado_mm) / 1000) * 10) / 10;
   const precio = Number(servicio.precio);
   return {
     categoria: servicio.categoria ?? 0,
-    talla: "Talla única",
-    tela: lienzo.tela?.trim() || "No aplica",
+    talla: "No aplica",
+    tela: "No aplica",
     corte: "No aplica",
     precio,
     producto: servicio.name,
@@ -181,6 +189,16 @@ function lineaProducto(lienzo, servicio) {
     cantidad: cantidadMetros,
     _subtotal: redondearCentavos(precio * cantidadMetros),
   };
+}
+
+// Nota de tela por lienzo para las observaciones del presupuesto -- ver el
+// porqué en lineaProducto: la tela real no va en el campo `tela` del
+// producto.
+function notaTela(lienzos) {
+  return lienzos
+    .filter((l) => l.tela?.trim())
+    .map((l) => `Lienzo #${l.id}: tela ${l.tela.trim()}`)
+    .join(" · ");
 }
 
 // Crea el presupuesto real en Ninesys a partir del servicio elegido y uno o
@@ -226,6 +244,7 @@ ninesysRouter.post("/:idEmpresa/presupuesto", async (req, res) => {
     const productos = lienzos.map((l) => lineaProducto(l, servicio));
     const total = redondearCentavos(productos.reduce((suma, p) => suma + p._subtotal, 0));
     const productosNinesys = productos.map(({ _subtotal, ...p }) => p);
+    const notas = notaTela(lienzos);
 
     const idPresupuesto = await crearPresupuesto(idEmpresa, {
       nombre: cliente.first_name,
@@ -235,7 +254,7 @@ ninesysRouter.post("/:idEmpresa/presupuesto", async (req, res) => {
       email: cliente.email,
       direccion: cliente.address,
       fechaEntrega: new Date().toISOString().substring(0, 10),
-      obs,
+      obs: notas ? `${obs}\n${notas}` : obs,
       total,
       responsable,
       productos: productosNinesys,
