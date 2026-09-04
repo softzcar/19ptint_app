@@ -14,14 +14,19 @@ export async function encolarJob(imagenId, tipo) {
   );
 }
 
-// Render del export de un lienzo, fuera del request. A diferencia de los
-// jobs de imagen no lleva fila en la tabla `jobs`: esa tabla está atada a
-// imagen_id, y el seguimiento de este trabajo ya lo hace la propia entrega
-// (estado/intentos/ultimo_error en entregas_lienzo).
-export async function encolarExportLienzo(lienzoId) {
+// Jobs que NO están atados a una imagen (exportar_lienzo, y los de DTF UV:
+// vectorizar/proponer-capas/exportar) -- no llevan fila en la tabla `jobs`
+// (esa tabla está atada a imagen_id): cada uno trackea su propio estado en
+// columnas de su propio modelo (Lienzo/EntregaLienzo, DtfUv). Ver el
+// registro MANEJADORES_SIN_IMAGEN en packages/worker/src/index.js.
+export async function encolarJobSinImagen(tipo, payload) {
   await colaProcesamiento.add(
-    "exportar_lienzo",
-    { lienzoId, tipo: "exportar_lienzo" },
+    tipo,
+    { ...payload, tipo },
     { removeOnComplete: 100, removeOnFail: 100, attempts: 3, backoff: { type: "exponential", delay: 10_000 } }
   );
+}
+
+export async function encolarExportLienzo(lienzoId) {
+  await encolarJobSinImagen("exportar_lienzo", { lienzoId });
 }

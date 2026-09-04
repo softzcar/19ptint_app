@@ -2,10 +2,14 @@
 import GeneradorTexto from "./GeneradorTexto.vue";
 import CargaLienzoListo from "./CargaLienzoListo.vue";
 import BarraProgreso from "./ui/BarraProgreso.vue";
+import CargaDtfUv from "./CargaDtfUv.vue";
 
 const props = defineProps({
   proyectoId: { type: [String, Number], required: true },
   store: { type: Object, required: true },
+  // Volver desde el editor de relieve (ver ProyectoDetalleView.vue) -- qué
+  // diseño DTF UV recargar automáticamente en vez de arrancar en blanco.
+  dtfUvIdInicial: { type: [String, Number], default: null },
 });
 // Un lienzo nuevo (a diferencia de una imagen) no vive en `store` (el
 // composable useImagenes) sino en `proyecto.lienzos`/`lienzo.items` de cada
@@ -13,6 +17,14 @@ const props = defineProps({
 // reemite hacia arriba para que cada vista (ProyectoDetalleView, LienzoView)
 // lo conecte a su propio cargar().
 const emit = defineEmits(["agregados"]);
+
+async function onTextoAgregado() {
+  // Sin esto la pestaña se queda en "Crear texto" tras agregar: el nuevo
+  // diseño entra a la grilla de arriba sin ningún cambio visible acá abajo,
+  // y da la sensación de que el botón no hizo nada.
+  props.store.modoCarga.value = "subir";
+  await props.store.cargar();
+}
 </script>
 
 <template>
@@ -46,6 +58,13 @@ const emit = defineEmits(["agregados"]);
       >
         Subir lienzo listo
       </button>
+      <button
+        class="pb-2 -mb-px border-b-2 transition-colors"
+        :class="store.modoCarga.value === 'dtfUv' ? 'border-np-teal text-np-teal' : 'border-transparent text-np-ink/40 hover:text-np-ink/70'"
+        @click="store.modoCarga.value = 'dtfUv'"
+      >
+        DTF UV
+      </button>
     </div>
 
     <div v-if="store.modoCarga.value === 'subir'" class="mt-4 space-y-2">
@@ -69,12 +88,18 @@ const emit = defineEmits(["agregados"]);
       <BarraProgreso v-if="store.subiendo.value" etiqueta="Subiendo" :progreso="store.progresoSubida.value" />
     </div>
 
-    <GeneradorTexto v-else-if="store.modoCarga.value === 'texto'" :proyecto-id="props.proyectoId" @agregada="store.cargar" class="mt-4" />
+    <GeneradorTexto v-else-if="store.modoCarga.value === 'texto'" :proyecto-id="props.proyectoId" @agregada="onTextoAgregado" class="mt-4" />
 
     <CargaLienzoListo
       v-else-if="store.modoCarga.value === 'listo'"
       :proyecto-id="props.proyectoId"
       @agregados="emit('agregados', $event)"
+    />
+
+    <CargaDtfUv
+      v-else-if="store.modoCarga.value === 'dtfUv'"
+      :proyecto-id="props.proyectoId"
+      :dtf-uv-id-inicial="dtfUvIdInicial"
     />
 
     <div v-else-if="store.modoCarga.value === 'buscar'" class="space-y-3 mt-4">

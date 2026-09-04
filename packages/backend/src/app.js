@@ -4,6 +4,7 @@ import morgan from "morgan";
 import { authRouter } from "./routes/auth.js";
 import { proyectosRouter } from "./routes/proyectos.js";
 import { imagenesRouter } from "./routes/imagenes.js";
+import { dtfUvRouter } from "./routes/dtfUv.js";
 import { lienzosRouter } from "./routes/lienzos.js";
 import { adminRouter } from "./routes/admin.js";
 import { ninesysRouter } from "./routes/ninesys.js";
@@ -28,6 +29,7 @@ export function crearApp() {
   app.use("/api/integracion", integracionRouter);
   app.use("/api/proyectos", proyectosRouter);
   app.use("/api", imagenesRouter);
+  app.use("/api", dtfUvRouter);
   app.use("/api", lienzosRouter);
   app.use("/api/admin", adminRouter);
   app.use("/api/ninesys", ninesysRouter);

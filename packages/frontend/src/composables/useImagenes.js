@@ -34,7 +34,7 @@ export function useImagenes(proyectoId, obtenerAnchoLimiteMm) {
   const proporcionBloqueada = ref({});
   const alturasInicializadas = new Set();
 
-  const modoCarga = ref("subir"); // 'subir' | 'buscar' | 'texto' | 'listo'
+  const modoCarga = ref("subir"); // 'subir' | 'buscar' | 'texto' | 'listo' | 'dtfUv'
   const busqueda = ref("");
   const buscando = ref(false);
   const busquedaError = ref("");

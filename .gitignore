@@ -7,9 +7,11 @@ build/
 storage/originales/*
 storage/procesadas/*
 storage/exports/*
+storage/dtf_uv/*
 !storage/originales/.gitkeep
 !storage/procesadas/.gitkeep
 !storage/exports/.gitkeep
+!storage/dtf_uv/.gitkeep
 packages/ai-service/venv/
 packages/ai-service/.venv/
 packages/ai-service/bin/
@@ -20,3 +22,4 @@ __pycache__/
 *.pyc
 .env.bak*
 *.env.bak*
+.claude/

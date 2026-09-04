@@ -17,6 +17,15 @@ if [ ! -d venv ]; then
 fi
 source venv/bin/activate
 pip install --upgrade pip >/dev/null
+
+# cairosvg (DTF UV: rasterizar_silueta) necesita la librería nativa libcairo,
+# no solo el paquete pip. En el VPS (AlmaLinux) el equivalente es
+# `dnf install cairo` -- ver DEPLOY.md.
+if ! python3 -c "import ctypes.util, sys; sys.exit(0 if ctypes.util.find_library('cairo') else 1)" 2>/dev/null; then
+  echo "Instalando cairo (libcairo, requerido por cairosvg) vía Homebrew..."
+  brew install cairo
+fi
+
 pip install -r requirements.txt
 
 # Release "20220424" del repo principal xinntao/Real-ESRGAN: es la que trae

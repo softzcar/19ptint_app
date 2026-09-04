@@ -11,7 +11,7 @@ const STORAGE_DIR = process.env.STORAGE_DIR
   ? path.resolve(process.env.STORAGE_DIR)
   : path.resolve(__dirname, "../../../../storage");
 
-const CATEGORIAS = ["originales", "procesadas", "exports"];
+const CATEGORIAS = ["originales", "procesadas", "exports", "dtf_uv"];
 
 export function rutaAbsoluta(rutaRelativa) {
   return path.join(STORAGE_DIR, rutaRelativa);

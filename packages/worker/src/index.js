@@ -4,22 +4,20 @@ import sharp from "sharp";
 import { prisma } from "../../backend/src/db.js";
 import { guardar, leer } from "../../backend/src/lib/storage.js";
 import { exportarLienzo } from "../../backend/src/lib/exportarLienzo.js";
+import { llamarAiService } from "./aiService.js";
+import {
+  procesarVectorizarDtfUv,
+  procesarProponerCapasDtfUv,
+  procesarExportarDtfUv,
+  procesarExportarHojaDtfUv,
+  procesarEfectoBordadoDtfUv,
+  procesarBordadoContornoDtfUv,
+  procesarGenerarPatronIaDtfUv,
+} from "./dtfUv.js";
 
 // Debe coincidir con NOMBRE_COLA en packages/backend/src/lib/queue.js
 const NOMBRE_COLA = "procesamiento-imagenes";
-const AI_SERVICE_URL = process.env.AI_SERVICE_URL ?? "http://localhost:8000";
 const connection = { url: process.env.REDIS_URL ?? "redis://localhost:6379" };
-
-async function llamarAiService(endpoint, buffer, filename) {
-  const form = new FormData();
-  form.append("file", new Blob([buffer]), filename);
-  const resp = await fetch(`${AI_SERVICE_URL}${endpoint}`, { method: "POST", body: form });
-  if (!resp.ok) {
-    const detalle = await resp.text().catch(() => "");
-    throw new Error(`ai-service ${endpoint} respondió ${resp.status}: ${detalle}`);
-  }
-  return Buffer.from(await resp.arrayBuffer());
-}
 
 async function procesarQuitarFondo(imagen) {
   const original = await leer(imagen.ruta_original);
@@ -65,17 +63,31 @@ async function procesarUpscale(imagen) {
 const PROCESADORES = { quitar_fondo: procesarQuitarFondo, upscale: procesarUpscale };
 const CAMPO_ESTADO = { quitar_fondo: "estado_fondo", upscale: "estado_upscale" };
 
+// Jobs que NO están atados a una imagen: no tienen imagen_id ni fila en la
+// tabla `jobs` (su seguimiento vive en columnas de su propio modelo -- ver
+// encolarJobSinImagen en lib/queue.js), así que se atienden antes de la
+// lógica común de más abajo.
+const MANEJADORES_SIN_IMAGEN = {
+  exportar_lienzo: async ({ lienzoId }) => {
+    const { ruta_export, bytes } = await exportarLienzo(lienzoId);
+    console.log(`[worker] lienzo ${lienzoId} exportado (${(bytes / 1e6).toFixed(1)}MB) -> ${ruta_export}`);
+  },
+  vectorizar_dtf_uv: async ({ dtfUvId }) => procesarVectorizarDtfUv(dtfUvId),
+  proponer_capas_dtf_uv: async ({ dtfUvId }) => procesarProponerCapasDtfUv(dtfUvId),
+  exportar_dtf_uv: async ({ dtfUvId }) => procesarExportarDtfUv(dtfUvId),
+  exportar_hoja_dtf_uv: async ({ dtfUvId }) => procesarExportarHojaDtfUv(dtfUvId),
+  efecto_bordado_dtf_uv: async ({ dtfUvId }) => procesarEfectoBordadoDtfUv(dtfUvId),
+  bordado_contorno_dtf_uv: async ({ dtfUvId }) => procesarBordadoContornoDtfUv(dtfUvId),
+  generar_patron_ia_dtf_uv: async ({ dtfUvId, prompt }) => procesarGenerarPatronIaDtfUv(dtfUvId, prompt),
+};
+
 const worker = new Worker(
   NOMBRE_COLA,
   async (job) => {
     const { imagenId, tipo } = job.data;
 
-    // El render del export no es un job de imagen: no tiene imagen_id ni fila
-    // en la tabla `jobs` (su seguimiento vive en entregas_lienzo), así que se
-    // atiende antes de la lógica común de más abajo.
-    if (tipo === "exportar_lienzo") {
-      const { ruta_export, bytes } = await exportarLienzo(job.data.lienzoId);
-      console.log(`[worker] lienzo ${job.data.lienzoId} exportado (${(bytes / 1e6).toFixed(1)}MB) -> ${ruta_export}`);
+    if (MANEJADORES_SIN_IMAGEN[tipo]) {
+      await MANEJADORES_SIN_IMAGEN[tipo](job.data);
       return;
     }
 

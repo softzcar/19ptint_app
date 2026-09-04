@@ -1,6 +1,27 @@
 fastapi==0.115.4
 uvicorn[standard]==0.32.0
 python-multipart==0.0.12
+# A diferencia del backend/worker (Node, "import dotenv/config"), esto nunca
+# se cargaba automático acá -- no se notaba porque el resto de las env vars
+# tenían default; GEMINI_API_KEY no tiene uno.
+python-dotenv==1.2.3
 rembg==2.0.60
 onnxruntime==1.19.2
 pillow==11.0.0
+# Antes eran dependencias transitivas no declaradas de rembg (frágil: un
+# bump de rembg podía dejarlas afuera). El efecto bordado depende de ellas
+# directamente, así que quedan fijadas acá.
+numpy==2.5.2
+opencv-python-headless==5.0.0.93
+# DTF UV: vectorizar() (vtracer, raster->SVG) y rasterizar_silueta()
+# (cairosvg, SVG->PNG limpio). cairosvg necesita libcairo del sistema (brew
+# install cairo en Mac; ya estaba presente como dep de otro paquete).
+vtracer==0.6.15
+cairosvg==2.9.0
+# generar_patron_ia(): llama a la API de Gemini. Antes era dependencia
+# transitiva no declarada (de pooch/rembg); ahora se depende directo.
+requests==2.34.2
+# exportar_tiff_spot(): TIFF Photometric=Separated multicanal (CMYK + 4
+# spot nombrados). Antes era dependencia transitiva no declarada (de
+# scikit-image); ahora se depende directo.
+tifffile==2026.8.16

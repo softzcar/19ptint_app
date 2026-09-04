@@ -88,6 +88,7 @@ model Proyecto {
   usuario    Usuario   @relation(fields: [usuario_id], references: [id], onDelete: Cascade)
   imagenes   Imagen[]
   lienzos    Lienzo[]
+  dtf_uv     DtfUv[]
 
   @@map("proyectos")
 }
@@ -173,6 +174,13 @@ model Lienzo {
   // la ficha del cliente.
   cliente_nombre         String?   @db.VarChar(100)
   cliente_apellido       String?   @db.VarChar(100)
+  // Copia local estructurada -- PENDIENTE DE SINCRONIZAR con el contrato
+  // real de Ninesys para estos 3 campos (ver crearCliente() en
+  // lib/ninesysApi.js). Se guardan tal cual mientras tanto, además de
+  // plegarse como texto legible en la dirección que sí llega a Ninesys hoy.
+  cliente_pais           String?   @db.VarChar(100)
+  cliente_estado         String?   @db.VarChar(100)
+  cliente_ciudad         String?   @db.VarChar(100)
   pedido_en              DateTime?
   // Entrega a la PC de producción de la empresa -- se crea al confirmar el
   // pedido, junto con id_empresa_ninesys.
@@ -195,6 +203,95 @@ model LienzoItem {
   imagen     Imagen   @relation(fields: [imagen_id], references: [id], onDelete: Cascade)
 
   @@map("lienzo_items")
+}
+
+// Diseño DTF UV: logo/imagen subida -> vectorizada -> propuesta automática
+// de máscaras blanco/barniz (sliders, sin IA generativa) -> editadas a mano
+// -> exportadas con separaciones spot reales. No usa la tabla `Job` (que es
+// imagen_id-scoped) -- sigue el mismo patrón que Lienzo/EntregaLienzo: cada
+// etapa async (vectorizado, capas, export) trackea su estado en columnas
+// propias. Ver /Users/ricardo/.claude/plans/witty-napping-origami.md.
+model DtfUv {
+  id                   Int           @id @default(autoincrement())
+  proyecto_id          Int
+  nombre_original      String?       @db.VarChar(255)
+  ruta_original        String?       @db.VarChar(500)
+  ruta_vector          String?       @db.VarChar(500) // SVG vectorizado (vtracer)
+  ruta_silueta         String?       @db.VarChar(500) // PNG limpio rasterizado desde el SVG
+  estado_vectorizado   EstadoProceso @default(pendiente)
+  mensaje_error_vector String?       @db.Text
+  // Efecto visual tipo bordado (textura de hilo + brillo satinado) sobre
+  // ruta_original -- filtro estético, no digitalizado real de máquina
+  // bordadora. Antes vivía en Imagen; se movió acá porque conceptualmente
+  // es parte del flujo DTF UV, no de la subida de imágenes genérica. Mismo
+  // patrón que estado_capas: opt-in, con un nivel de deshacer.
+  estado_bordado       EstadoProceso @default(omitido)
+  mensaje_error_bordado String?      @db.Text
+  ruta_pre_bordado     String?       @db.VarChar(500)
+  // Sliders del efecto bordado: separación entre puntadas (más chico = más
+  // tupido/denso) y medio-largo de cada puntada.
+  bordado_paso_px      Int           @default(6)
+  bordado_largo_px     Int           @default(7)
+  // Segunda capa de bordado: SOLO el contorno (letras/logo/imágenes), sin
+  // rellenar el interior ni el fondo -- pensada como punto de partida para
+  // la capa spot blanco (Spot1/Spot2), no necesariamente igual a la capa de
+  // bordado general de arriba. Escribe directo a ruta_mascara_blanco.
+  contorno_grosor_px          Int           @default(12)
+  estado_contorno_bordado     EstadoProceso @default(omitido)
+  mensaje_error_contorno_bordado String?    @db.Text
+  // Textura generada con Gemini a partir de una instrucción de texto (fondo
+  // magenta sólido pedido al modelo, recortado por color después -- ver
+  // ai-service/app/procesamiento.py). NO reemplaza ruta_mascara_blanco/
+  // barniz directo: es un archivo aparte (PNG con transparencia real, gris
+  // = intensidad) que el editor de relieve usa como relleno (canvas
+  // pattern) sobre las regiones vectorizadas ya activas -- el hueco
+  // transparente de la textura es justo lo que genera la variación de
+  // relieve al aplicarla.
+  estado_patron_ia     EstadoProceso @default(omitido)
+  mensaje_error_patron_ia String?    @db.Text
+  ruta_patron_ia       String?       @db.VarChar(500)
+  // Sliders de la propuesta automática de capas (CONTEXTO.md-style: ver plan).
+  grosor_relieve_px    Int           @default(6)
+  sensibilidad         Int           @default(50)
+  // "omitido" y no "pendiente": a diferencia del vectorizado (que arranca
+  // solo al subir), esto lo dispara el usuario a mano más tarde -- mismo
+  // criterio que Imagen.estado_upscale/estado_bordado.
+  estado_capas         EstadoProceso @default(omitido)
+  mensaje_error_capas  String?       @db.Text
+  // Nacen como copia de la propuesta automática; a partir de ahí el usuario
+  // las edita a mano en el editor de pintura/borrado (Fase 4 del plan).
+  ruta_mascara_blanco  String?       @db.VarChar(500)
+  ruta_mascara_barniz  String?       @db.VarChar(500)
+  // Un nivel de deshacer para cualquiera de las 3 formas de poblar estas dos
+  // rutas (contorno de bordado, patrón IA, o guardado manual del editor) --
+  // se pisa con el valor ANTERIOR justo antes de cada sobreescritura, sin
+  // importar cuál de las 3 lo generó. Mismo criterio que ruta_pre_upscale.
+  ruta_pre_mascara_blanco String?    @db.VarChar(500)
+  ruta_pre_mascara_barniz String?    @db.VarChar(500)
+  ancho_mm             Decimal?      @db.Decimal(8, 2)
+  alto_mm              Decimal?      @db.Decimal(8, 2)
+  estado_export        EstadoProceso @default(omitido) // mismo criterio que estado_capas
+  mensaje_error_export String?       @db.Text
+  ruta_export_pdf      String?       @db.VarChar(500) // separaciones spot reales (/Separation)
+  ruta_export_tiff     String?       @db.VarChar(500) // CMYK + 4 canales spot nombrados (formato real de producción)
+  // Hoja con copias + marcas de registro + contorno de corte, para el
+  // plotter de corte (Graphtec/ARMS) -- entregable APARTE de
+  // ruta_export_pdf (que es el diseño suelto, sin marcas). copias=null
+  // significa que todavía no se armó ninguna hoja.
+  copias               Int?
+  ancho_hoja_mm        Decimal?      @db.Decimal(8, 2) // preset de rollo, mismo set que Lienzo tipo:dtf
+  margen_hoja_mm       Decimal       @default(5) @db.Decimal(6, 2) // margen de hoja Y separación entre copias
+  marca_registro_mm    Decimal       @default(10) @db.Decimal(6, 2) // tamaño de marca ARMS -- ajustable, confirmar contra el plotter real
+  rotar_copias         Boolean       @default(false) // gira cada copia 90° en la grilla -- útil cuando el diseño entra más veces por fila así
+  alto_hoja_mm         Decimal?      @db.Decimal(10, 2) // calculado por "armar hoja"
+  estado_hoja          EstadoProceso @default(omitido)
+  mensaje_error_hoja   String?       @db.Text
+  ruta_hoja_pdf        String?       @db.VarChar(500)
+  created_at           DateTime      @default(now())
+  updated_at           DateTime      @updatedAt
+  proyecto             Proyecto      @relation(fields: [proyecto_id], references: [id], onDelete: Cascade)
+
+  @@map("dtf_uv")
 }
 
 // Agente de escritorio instalado en la PC de producción de cada empresa.

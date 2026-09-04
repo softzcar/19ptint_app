@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import { api } from "../lib/api.js";
 import { useImagenes, limiteAnchoUtilMm, validarParaAcomodar, erroresPorImagen } from "../composables/useImagenes.js";
 import CargaImagenes from "../components/CargaImagenes.vue";
@@ -9,6 +9,7 @@ import PedidoWhatsApp from "../components/PedidoWhatsApp.vue";
 
 const props = defineProps({ id: { type: [String, Number], required: true } });
 const router = useRouter();
+const route = useRoute();
 
 const proyecto = ref(null);
 let intervalo = null;
@@ -45,11 +46,15 @@ const erroresGeneracion = computed(() =>
 );
 const erroresDeImagen = computed(() => erroresPorImagen(erroresGeneracion.value));
 
+const disenosDtfUv = ref([]);
+
 async function cargar() {
   // imgs.cargar() ya trae el proyecto completo (imágenes + lienzos) --
   // reusarlo tal cual evita un segundo GET redundante. De acá solo se usan
   // `nombre` y `lienzos`; las imágenes salen de imgs.imagenes.
   proyecto.value = await imgs.cargar();
+  const { data } = await api.get(`/proyectos/${props.id}/dtf-uv`);
+  disenosDtfUv.value = data;
 }
 
 function onTipoChange() {
@@ -74,6 +79,10 @@ async function generarLienzo() {
 
 onMounted(async () => {
   await cargar();
+  // Vuelta desde el editor de relieve (ver el link "Volver a DTF UV" en
+  // SpotColorEditorView.vue): reabre la pestaña DTF UV en vez de la de
+  // "Subir archivo" por defecto, para no perder el lugar donde se estaba.
+  if (route.query.tab === "dtfUv") imgs.modoCarga.value = "dtfUv";
   intervalo = setInterval(() => {
     if (hayProcesando.value) cargar();
   }, 3000);
@@ -93,7 +102,7 @@ onUnmounted(() => clearInterval(intervalo));
     <section class="bg-white rounded-xl border border-black/5 shadow-sm p-5 sm:p-6 space-y-4">
       <h2 class="text-xs font-bold uppercase tracking-wide text-np-ink/50">Imágenes</h2>
 
-      <CargaImagenes :proyecto-id="props.id" :store="imgs" @agregados="cargar" />
+      <CargaImagenes :proyecto-id="props.id" :store="imgs" :dtf-uv-id-inicial="route.query.dtfUvId" @agregados="cargar" />
 
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <TarjetaImagen
@@ -198,6 +207,20 @@ onUnmounted(() => clearInterval(intervalo));
             <span v-if="l.tela" class="text-np-ink/40">(tela: {{ l.tela }})</span>
           </router-link>
           <span v-if="l.id_presupuesto_ninesys" class="text-xs text-np-ink/40">presupuesto #{{ l.id_presupuesto_ninesys }}</span>
+        </li>
+      </ul>
+    </section>
+
+    <section v-if="disenosDtfUv.length" class="bg-white rounded-xl border border-black/5 shadow-sm p-5 sm:p-6 space-y-3">
+      <h2 class="text-xs font-bold uppercase tracking-wide text-np-ink/50">Diseños DTF UV</h2>
+      <ul class="space-y-1.5 text-sm">
+        <li v-for="d in disenosDtfUv" :key="d.id" class="flex items-center gap-2">
+          <router-link :to="{ name: 'dtf-uv-editor', params: { id: d.id } }" class="text-np-ink hover:text-np-teal transition-colors">
+            <span class="font-bold">#{{ d.id }}</span> — {{ d.nombre_original }}
+            <span class="text-np-ink/40">
+              ({{ d.estado_vectorizado !== "listo" ? "vectorizando…" : d.estado_export === "listo" ? "exportado" : "listo para editar" }})
+            </span>
+          </router-link>
         </li>
       </ul>
     </section>

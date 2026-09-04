@@ -17,6 +17,12 @@ const routes = [
     props: true,
   },
   {
+    path: "/dtf-uv/:id",
+    name: "dtf-uv-editor",
+    component: () => import("../views/SpotColorEditorView.vue"),
+    props: true,
+  },
+  {
     path: "/admin/usuarios",
     name: "admin-usuarios",
     component: () => import("../views/AdminUsuariosView.vue"),
