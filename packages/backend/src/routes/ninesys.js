@@ -161,19 +161,36 @@ function redondearCentavos(n) {
   return Math.round(n * 100) / 100;
 }
 
+// PLACEHOLDER TEMPORAL: el producto real "Uso de software 19print" todavía
+// no existe en el catálogo de Ninesys (confirmado con el usuario). Mientras
+// tanto se reusa el cod del servicio de impresión que el cliente ya eligió
+// en ese presupuesto (ya válido/curado para esa empresa) solo para tener un
+// cod que Ninesys acepte -- el precio real de ese servicio se IGNORA a
+// propósito, esta línea siempre se factura a precio fijo.
+// TODO: reemplazar por el cod real en cuanto exista en Ninesys.
+const USO_SOFTWARE_PRECIO_METRO = Number(process.env.USO_SOFTWARE_PRECIO_METRO ?? 1);
+
 // Un lienzo -> una línea de producto del presupuesto: cantidad (metros, al
 // décimo hacia arriba) y precio unitario real (el que ya eligió el admin)
 // salen de ESE lienzo puntual -- cada uno pudo subirse con su propia tela
 // (sublimación) y su propio largo. Redondear al décimo hacia arriba (no al
 // metro entero) evita sobrefacturar: 3.001m pasa a cobrarse como 3.1m, no
 // como 4 metros completos.
+//
+// talla/tela van SIEMPRE en "No aplica", nunca el texto real (ej. "Talla
+// única" o la tela que escribió el cliente): app_multi (nueva.vue) hace
+// `Number(p.talla)`/`Number(p.tela)` sobre lo que no sea exactamente "No
+// aplica", y cualquier texto real da NaN -- el selector queda roto/vacío en
+// la orden. Estos servicios por metraje no tienen talla real, y la tela (si
+// el cliente la indicó) se manda aparte en las observaciones del presupuesto
+// (ver notaTela más abajo), donde el staff SÍ la ve como texto libre.
 function lineaProducto(lienzo, servicio) {
   const cantidadMetros = Math.ceil((Number(lienzo.alto_usado_mm) / 1000) * 10) / 10;
   const precio = Number(servicio.precio);
   return {
     categoria: servicio.categoria ?? 0,
-    talla: "Talla única",
-    tela: lienzo.tela?.trim() || "No aplica",
+    talla: "No aplica",
+    tela: "No aplica",
     corte: "No aplica",
     precio,
     producto: servicio.name,
@@ -183,6 +200,38 @@ function lineaProducto(lienzo, servicio) {
   };
 }
 
+// Nota de tela por lienzo para las observaciones del presupuesto -- ver el
+// porqué en lineaProducto: la tela real no va en el campo `tela` del
+// producto.
+function notaTela(lienzos) {
+  return lienzos
+    .filter((l) => l.tela?.trim())
+    .map((l) => `Lienzo #${l.id}: tela ${l.tela.trim()}`)
+    .join(" · ");
+}
+
+// Línea automática de "uso de software", $1/metro fijo -- ver constante
+// USO_SOFTWARE_PRECIO_METRO arriba. No la elige ni la puede quitar el
+// cliente: se agrega server-side a TODO presupuesto, sumando los metros de
+// todos los lienzos incluidos.
+function lineaUsoSoftware(lienzos, servicio) {
+  const metrosTotales = lienzos.reduce(
+    (suma, l) => suma + Math.ceil((Number(l.alto_usado_mm) / 1000) * 10) / 10,
+    0
+  );
+  const precio = USO_SOFTWARE_PRECIO_METRO;
+  return {
+    categoria: servicio.categoria ?? 0,
+    talla: "Talla única",
+    tela: "No aplica",
+    corte: "No aplica",
+    precio,
+    producto: "Uso de software 19print (temporal)",
+    cod: servicio.cod, // PLACEHOLDER: mismo cod que el servicio elegido, ver nota arriba
+    cantidad: metrosTotales,
+    _subtotal: redondearCentavos(precio * metrosTotales),
+  };
+}
 // Crea el presupuesto real en Ninesys a partir del servicio elegido y uno o
 // más lienzos ya armados/subidos -- varios lienzos entran como líneas de
 // producto separadas de UN mismo presupuesto (cada uno con su propia
@@ -224,6 +273,7 @@ ninesysRouter.post("/:idEmpresa/presupuesto", async (req, res) => {
     const responsable = await getVendedorSugerido(idEmpresa, cliente.phone);
 
     const productos = lienzos.map((l) => lineaProducto(l, servicio));
+    productos.push(lineaUsoSoftware(lienzos, servicio)); // línea automática, no seleccionable ni removible desde el frontend
     const total = redondearCentavos(productos.reduce((suma, p) => suma + p._subtotal, 0));
     const productosNinesys = productos.map(({ _subtotal, ...p }) => p);
 
@@ -232,6 +282,7 @@ ninesysRouter.post("/:idEmpresa/presupuesto", async (req, res) => {
     // campo propio para esto en el presupuesto, así que viaja legible dentro
     // de la dirección en vez de perderse.
     const direccionCompuesta = [cliente.address, cliente.ciudad, cliente.estado, cliente.pais].filter(Boolean).join(", ");
+    const notas = notaTela(lienzos);
     const idPresupuesto = await crearPresupuesto(idEmpresa, {
       nombre: cliente.first_name,
       apellido: cliente.last_name,
@@ -240,7 +291,7 @@ ninesysRouter.post("/:idEmpresa/presupuesto", async (req, res) => {
       email: cliente.email,
       direccion: direccionCompuesta,
       fechaEntrega: new Date().toISOString().substring(0, 10),
-      obs,
+      obs: notas ? `${obs}\n${notas}` : obs,
       total,
       responsable,
       productos: productosNinesys,

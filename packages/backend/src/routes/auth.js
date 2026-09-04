@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { randomInt } from "node:crypto";
 import { prisma } from "../db.js";
-import { hashPassword, verificarPassword, firmarToken, requireAuth } from "../lib/auth.js";
+import { hashPassword, verificarPassword, firmarToken, requireAuth, ponerCookieSesion, borrarCookieSesion } from "../lib/auth.js";
 import { normalizarTelefono } from "../lib/telefono.js";
 import { empresasDondeEsCliente } from "../lib/clienteNinesys.js";
 import { enviarWhatsapp } from "../lib/msgNinesys.js";
@@ -35,7 +35,9 @@ authRouter.post("/login", async (req, res) => {
   if (!usuario.activo) {
     return res.status(403).json({ error: "Esta cuenta está deshabilitada" });
   }
-  res.json({ token: firmarToken(usuario), usuario: datosPublicos(usuario) });
+  const token = firmarToken(usuario);
+  ponerCookieSesion(res, token);
+  res.json({ token, usuario: datosPublicos(usuario) });
 });
 
 // --- Login de clientes por teléfono ---
@@ -74,7 +76,20 @@ authRouter.post("/login-cliente", async (req, res) => {
   if (!usuario.activo) {
     return res.status(403).json({ error: "Esta cuenta está deshabilitada" });
   }
-  res.json({ token: firmarToken(usuario), usuario: datosPublicos(usuario) });
+  const token = firmarToken(usuario);
+  ponerCookieSesion(res, token);
+  res.json({ token, usuario: datosPublicos(usuario) });
+});
+
+// Login unificado (fase 2, ver plan): clasificador-disenos/system-nesting
+// redirigen acá con ?next=<url de vuelta> cuando no encuentran la cookie de
+// sesión -- este logout es simétrico, borra esa misma cookie de dominio
+// compartido para que la próxima carga de página en cualquiera de las 3
+// apps vuelva a pedir login. No requiere estar logueado (borrar una cookie
+// que ya no existe es un no-op inofensivo).
+authRouter.post("/logout", (req, res) => {
+  borrarCookieSesion(res);
+  res.json({ ok: true });
 });
 
 // Autoservicio: genera una clave nueva y la manda por WhatsApp. Sirve tanto

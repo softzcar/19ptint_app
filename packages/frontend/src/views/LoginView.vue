@@ -1,13 +1,37 @@
 <script setup>
 import { ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import { api } from "../lib/api.js";
 import { useAuthStore } from "../stores/auth.js";
 import { EMPRESAS_NINESYS } from "../config/empresasNinesys.js";
 import BrandLogo from "../components/BrandLogo.vue";
 
 const router = useRouter();
+const route = useRoute();
 const auth = useAuthStore();
+
+// Login unificado (fase 2 de la unificación con clasificador-disenos/
+// system-nesting, ver plan): esas apps redirigen acá con ?next=<url de
+// vuelta> cuando no encuentran la cookie de sesión compartida. Whitelist
+// explícita de dominios permitidos -- nunca un redirect abierto a
+// cualquier URL que venga en el query string (evita que este login se use
+// como trampolín de phishing hacia un sitio ajeno).
+const DOMINIOS_PERMITIDOS = ["sublima.nineteengreen.com", "dtf.nineteengreen.com"];
+function irDespuesDeLogin() {
+  const next = route.query.next;
+  if (typeof next === "string") {
+    try {
+      const url = new URL(next);
+      if (DOMINIOS_PERMITIDOS.includes(url.hostname)) {
+        window.location.href = next;
+        return;
+      }
+    } catch {
+      // next no es una URL válida -- ignorar y caer al comportamiento normal
+    }
+  }
+  router.push({ name: "proyectos" });
+}
 
 // "telefono" -> verificar-telefono decide el siguiente paso:
 //   "clave" (ya tiene acceso) | "sin_clave" (es cliente, falta pedirla) |
@@ -41,7 +65,7 @@ async function loginCliente() {
   try {
     const { data } = await api.post("/auth/login-cliente", { telefono: telefono.value, password: password.value });
     auth.iniciarSesion(data.token, data.usuario);
-    router.push({ name: "proyectos" });
+    irDespuesDeLogin();
   } catch (e) {
     error.value = e.response?.data?.error ?? "No se pudo iniciar sesión";
   } finally {
@@ -83,7 +107,7 @@ async function loginAdmin() {
   try {
     const { data } = await api.post("/auth/login", { email: email.value, password: password.value });
     auth.iniciarSesion(data.token, data.usuario);
-    router.push({ name: "proyectos" });
+    irDespuesDeLogin();
   } catch (e) {
     error.value = e.response?.data?.error ?? "No se pudo iniciar sesión";
   } finally {

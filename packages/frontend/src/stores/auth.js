@@ -1,4 +1,5 @@
 import { defineStore } from "pinia";
+import { api } from "../lib/api.js";
 
 export const useAuthStore = defineStore("auth", {
   state: () => ({
@@ -15,11 +16,21 @@ export const useAuthStore = defineStore("auth", {
       localStorage.setItem("token", token);
       localStorage.setItem("usuario", JSON.stringify(usuario));
     },
-    cerrarSesion() {
+    async cerrarSesion() {
       this.token = null;
       this.usuario = null;
       localStorage.removeItem("token");
       localStorage.removeItem("usuario");
+      // Login unificado (ver plan): "Salir" acá también tiene que cerrar la
+      // sesión compartida (cookie ninesys_session) -- si no, quedaba
+      // logueado en clasificador-disenos/system-nesting aunque esta app ya
+      // mostrara la pantalla de login. Nunca debe bloquear el logout local
+      // si esto falla (sin red, etc.) -- por eso el catch silencioso.
+      try {
+        await api.post("/auth/logout");
+      } catch {
+        // no-op
+      }
     },
     actualizarUsuario(usuario) {
       this.usuario = usuario;
