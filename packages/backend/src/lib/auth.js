@@ -21,34 +21,6 @@ export function firmarToken(usuario) {
   });
 }
 
-// Login unificado (fase 2 de la unificación con clasificador-disenos/
-// system-nesting, ver plan): además del token de siempre en el body (así el
-// frontend Vue de esta app sigue funcionando exactamente igual), se pone
-// esta MISMA firma como cookie de dominio compartido. `sublima.
-// nineteengreen.com` (Flask + el frontend de nesting, mismo origen ahí) la
-// recibe automática en cada request -- sin CORS de por medio, es solo una
-// cookie normal del navegador. `COOKIE_DOMAIN` es configurable porque en
-// local (localhost) un dominio con punto inicial no aplica -- undefined ahí
-// deja que el navegador use el host exacto, como siempre.
-const COOKIE_NOMBRE = "ninesys_session";
-const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
-const COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 días, igual que expiresIn del JWT
-
-export function ponerCookieSesion(res, token) {
-  res.cookie(COOKIE_NOMBRE, token, {
-    domain: COOKIE_DOMAIN,
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    maxAge: COOKIE_MAX_AGE_MS,
-    path: "/",
-  });
-}
-
-export function borrarCookieSesion(res) {
-  res.clearCookie(COOKIE_NOMBRE, { domain: COOKIE_DOMAIN, path: "/" });
-}
-
 export async function requireAuth(req, res, next) {
   const header = req.headers.authorization ?? "";
   const [, token] = header.split(" ");

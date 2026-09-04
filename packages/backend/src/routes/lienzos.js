@@ -268,11 +268,6 @@ lienzosRouter.post("/lienzos/:id/exportar", cargarLienzoPropio, async (req, res)
 });
 
 lienzosRouter.get("/lienzos/:id/descargar", cargarLienzoPropio, async (req, res) => {
-  // Solo staff descarga el archivo final -- el cliente ve previews/renders,
-  // nunca el lienzo listo para producción (ver plan "fases 3-5").
-  if (req.rol !== "admin") {
-    return res.status(403).json({ error: "Solo staff puede descargar el archivo final" });
-  }
   if (!req.lienzo.ruta_export) {
     return res.status(404).json({ error: "Este lienzo todavía no fue exportado" });
   }
