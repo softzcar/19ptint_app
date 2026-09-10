@@ -1,11 +1,15 @@
 // Cliente HTTP hacia ninesys-api (backend PHP/Slim de Ninesys). Reutiliza
 // endpoints ya existentes y probados por app_multi -- no se agrega ninguna
 // lógica de negocio nueva acá, solo se llama tal cual al contrato real.
-// Auth: header Authorization = id_empresa crudo (mismo mecanismo que usa
-// hoy toda la API de Ninesys -- no es JWT, es el modelo de confianza
-// existente, pendiente de una fase de seguridad ya diferida del lado de
-// Ninesys, no algo a resolver acá).
+// Auth: header Authorization = id_empresa crudo, igual que siempre, MÁS
+// X-Internal-Token (auditoría de seguridad 2026-09-10, cierra el hallazgo
+// C2 de Ninesys): IdEmpresaMiddleware ahora exige este token para confiar
+// en el id_empresa del Authorization -- sin él, sigue funcionando en modo
+// legado (transición gradual), pero deja de estar autenticado como
+// servicio de confianza. NINESYS_API_INTERNAL_TOKEN debe ser EXACTAMENTE
+// el mismo valor que PRINT_SERVICE_INTERNAL_TOKEN en el .env de ninesys-api.
 const BASE = process.env.NINESYS_API_URL;
+const INTERNAL_TOKEN = process.env.NINESYS_API_INTERNAL_TOKEN || "";
 
 async function ninesysFetch(idEmpresa, path, opts = {}) {
   if (!BASE) {
@@ -13,7 +17,11 @@ async function ninesysFetch(idEmpresa, path, opts = {}) {
   }
   const resp = await fetch(`${BASE}${path}`, {
     ...opts,
-    headers: { ...(opts.headers ?? {}), Authorization: String(idEmpresa) },
+    headers: {
+      ...(opts.headers ?? {}),
+      Authorization: String(idEmpresa),
+      "X-Internal-Token": INTERNAL_TOKEN,
+    },
   });
   const texto = await resp.text();
   let data;
