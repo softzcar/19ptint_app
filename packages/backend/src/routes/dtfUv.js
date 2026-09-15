@@ -231,17 +231,31 @@ dtfUvRouter.patch(
       return res.status(400).json({ error: "No se recibió ninguna máscara" });
     }
 
+    // Auditoría de seguridad 2026-09-15: a diferencia del resto de los
+    // endpoints de subida de este repo, acá el buffer se guardaba tal cual
+    // llegó, sin pasar por sharp -- un archivo que no fuera un PNG válido
+    // recién rompía async, más tarde, en el worker de export (pdfDoc.
+    // embedPng()). Re-encodear acá (mismo patrón que POST /imagenes,
+    // línea ~44 de este archivo) valida el contenido real ANTES de guardar.
+    let blancoNormalizado, barnizNormalizado;
+    try {
+      if (archivoBlanco) blancoNormalizado = await sharp(archivoBlanco.buffer).png().toBuffer();
+      if (archivoBarniz) barnizNormalizado = await sharp(archivoBarniz.buffer).png().toBuffer();
+    } catch {
+      return res.status(400).json({ error: "Una de las máscaras no es una imagen válida" });
+    }
+
     const data = {};
     // El "pre" anterior queda pisado (y se borra) porque ya no hay forma de
     // volver más atrás que un nivel -- mismo criterio que ruta_pre_upscale.
     const preAnteriores = [];
     if (archivoBlanco) {
-      data.ruta_mascara_blanco = await guardar("dtf_uv", archivoBlanco.buffer, ".png");
+      data.ruta_mascara_blanco = await guardar("dtf_uv", blancoNormalizado, ".png");
       data.ruta_pre_mascara_blanco = req.dtfUv.ruta_mascara_blanco;
       preAnteriores.push(req.dtfUv.ruta_pre_mascara_blanco);
     }
     if (archivoBarniz) {
-      data.ruta_mascara_barniz = await guardar("dtf_uv", archivoBarniz.buffer, ".png");
+      data.ruta_mascara_barniz = await guardar("dtf_uv", barnizNormalizado, ".png");
       data.ruta_pre_mascara_barniz = req.dtfUv.ruta_mascara_barniz;
       preAnteriores.push(req.dtfUv.ruta_pre_mascara_barniz);
     }

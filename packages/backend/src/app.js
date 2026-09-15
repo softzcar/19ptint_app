@@ -13,6 +13,12 @@ import { integracionRouter } from "./routes/integracion.js";
 
 export function crearApp() {
   const app = express();
+  // Auditoría de seguridad 2026-09-15: el backend corre siempre detrás de
+  // LiteSpeed (proxy reverso, ver infra/dtf-litespeed/) -- sin esto,
+  // req.ip devuelve la IP del proxy para TODO request, y el lockout de
+  // login (lib/rateLimit.js) quedaría sin poder distinguir clientes reales
+  // por IP (solo por identificador, más débil).
+  app.set("trust proxy", 1);
   app.use(cors({ origin: process.env.CORS_ORIGIN ?? "http://localhost:5173" }));
   app.use(express.json());
   app.use(morgan("dev"));

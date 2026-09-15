@@ -11,19 +11,52 @@ import {
 } from "../lib/ninesysApi.js";
 import { enviarWhatsapp } from "../lib/msgNinesys.js";
 import { encolarEntregaLienzo } from "../lib/entregas.js";
-import { buscarClientePorTelefono } from "../lib/clienteNinesys.js";
+import { buscarClientePorTelefono, IDS_EMPRESAS } from "../lib/clienteNinesys.js";
 import { normalizarTelefono } from "../lib/telefono.js";
 
 export const ninesysRouter = Router();
 ninesysRouter.use(requireAuth);
 
+// Auditoría de seguridad 2026-09-15: antes solo se validaba que idEmpresa
+// fuera un entero positivo -- cualquier usuario autenticado (incluido el rol
+// "cliente", auto-registrable por teléfono) podía pedir/crear/modificar
+// clientes, presupuestos y disparar WhatsApp de CUALQUIER empresa del
+// ecosistema Ninesys, no solo de las 2 que esta app realmente integra.
+// IDS_EMPRESAS es la misma constante ya usada por el flujo de login de
+// clientes (clienteNinesys.js) -- confirmado que el frontend nunca pide otra
+// cosa (EMPRESAS_NINESYS, mismo set).
 function idEmpresaDeParam(req, res) {
   const idEmpresa = Number(req.params.idEmpresa);
   if (!Number.isInteger(idEmpresa) || idEmpresa <= 0) {
     res.status(400).json({ error: "idEmpresa inválido" });
     return null;
   }
+  if (!IDS_EMPRESAS.includes(idEmpresa)) {
+    res.status(403).json({ error: "Empresa no habilitada para esta app" });
+    return null;
+  }
   return idEmpresa;
+}
+
+// Auditoría de seguridad 2026-09-15: el rol "cliente" es auto-registrable
+// (cualquiera con un teléfono que sea cliente de Ninesys puede pedirse una
+// clave, ver routes/auth.js) -- no puede quedar habilitado para pedir
+// presupuestos/enviar WhatsApp en nombre de OTRA persona (ej. spoofeando
+// cliente.phone con el número de un tercero). El buscador manual de cliente
+// (PedidoClienteBuscador.vue) es un flujo pensado para admins ("pidiendo en
+// nombre de cualquiera", ver comentario original de este archivo) -- se
+// preserva sin restricción para ese rol. Para "cliente", se exige que el
+// teléfono en juego sea el mismo de la cuenta autenticada.
+async function exigirTelefonoPropio(req, res, telefonoAUsar) {
+  if (req.rol === "admin") return true;
+  const normalizadoUso = normalizarTelefono(telefonoAUsar);
+  const usuario = await prisma.usuario.findUnique({ where: { id: req.usuarioId } });
+  const normalizadoCuenta = normalizarTelefono(usuario?.telefono);
+  if (!normalizadoUso || !normalizadoCuenta || normalizadoUso.e164 !== normalizadoCuenta.e164) {
+    res.status(403).json({ error: "Solo puede pedir presupuestos o notificaciones a su propio teléfono" });
+    return false;
+  }
+  return true;
 }
 
 // El catálogo real de Ninesys (es_servicio_de_impresion) puede traer
@@ -60,9 +93,21 @@ ninesysRouter.get("/:idEmpresa/productos-impresion", async (req, res) => {
   }
 });
 
+// Auditoría de seguridad 2026-09-15: búsqueda de texto libre entre TODOS
+// los clientes de la empresa (nombre, teléfono, email, cédula, dirección)
+// -- el propio comentario original de este archivo ya documentaba que este
+// buscador está "pensado para admins pidiendo en nombre de cualquiera", no
+// para que un cliente autogestionado (rol "cliente", auto-registrable)
+// busque los datos de otra persona. Un cliente real que necesite su propio
+// registro ya tiene /clientes/auto y /clientes/mi-registro (scoped a su
+// propia cuenta); si no encuentran nada, el flujo normal es crear un
+// registro nuevo (POST /clientes, sigue abierto más abajo).
 ninesysRouter.get("/:idEmpresa/clientes", async (req, res) => {
   const idEmpresa = idEmpresaDeParam(req, res);
   if (idEmpresa === null) return;
+  if (req.rol !== "admin") {
+    return res.status(403).json({ error: "Solo un admin puede buscar clientes existentes" });
+  }
   const texto = (req.query.buscar ?? "").toString().trim();
   if (texto.length < 2) return res.json({ data: [] });
   try {
@@ -122,9 +167,17 @@ ninesysRouter.get("/:idEmpresa/clientes/mi-registro", async (req, res) => {
   }
 });
 
+// Un cliente autogestionado (rol "cliente") SÍ necesita esto -- es como se
+// auto-registra en Ninesys la primera vez que pide un presupuesto y no
+// tiene todavía un registro ahí (ver PedidoClienteBuscador.vue, botón
+// "cliente nuevo"). Por eso no se restringe a admin como la búsqueda de
+// arriba -- pero sí se exige (auditoría de seguridad 2026-09-15) que el
+// teléfono del registro creado sea el de su propia cuenta, para que no
+// pueda crear un registro de cliente a nombre de otra persona.
 ninesysRouter.post("/:idEmpresa/clientes", async (req, res) => {
   const idEmpresa = idEmpresaDeParam(req, res);
   if (idEmpresa === null) return;
+  if (!(await exigirTelefonoPropio(req, res, req.body?.phone))) return;
   try {
     const cliente = await crearCliente(idEmpresa, req.body ?? {});
     res.status(201).json(cliente);
@@ -136,9 +189,18 @@ ninesysRouter.post("/:idEmpresa/clientes", async (req, res) => {
   }
 });
 
+// Auditoría de seguridad 2026-09-15: editar un cliente EXISTENTE por :id
+// arbitrario (sin cruzarlo contra nada) permitía a cualquier cuenta
+// autenticada sobreescribir nombre/teléfono/email/dirección de OTRO cliente
+// real de la empresa -- restringido a admin, igual que la búsqueda de
+// arriba (mismo criterio: el rol "cliente" nunca necesita editar el
+// registro de otra persona).
 ninesysRouter.put("/:idEmpresa/clientes/:id", async (req, res) => {
   const idEmpresa = idEmpresaDeParam(req, res);
   if (idEmpresa === null) return;
+  if (req.rol !== "admin") {
+    return res.status(403).json({ error: "Solo un admin puede editar un cliente existente" });
+  }
   try {
     const cliente = await actualizarCliente(idEmpresa, req.params.id, req.body ?? {});
     res.json(cliente);
@@ -252,6 +314,35 @@ ninesysRouter.post("/:idEmpresa/presupuesto", async (req, res) => {
   if (!lienzoIds.length || !cliente?.phone || !servicio?.cod) {
     return res.status(400).json({ error: "Faltan datos (lienzoIds, cliente.phone, servicio)" });
   }
+  if (!(await exigirTelefonoPropio(req, res, cliente.phone))) return;
+
+  // Auditoría de seguridad 2026-09-15: antes `servicio` (nombre, precio,
+  // categoría) venía completo del body sin volver a cruzarse contra la
+  // curaduría del admin -- un request armado a mano podía facturar
+  // cualquier precio (incluso $0.01) bajo cualquier nombre de producto. El
+  // único dato que se sigue confiando del cliente es `servicio.cod` (una
+  // clave de catálogo, no un valor sensible); el resto se reconstruye acá
+  // igual que el GET /productos-impresion (catálogo real de Ninesys +
+  // curaduría de precio propia).
+  let servicioConfiable;
+  try {
+    const [productos, visible] = await Promise.all([
+      getProductosImpresion(idEmpresa),
+      prisma.servicioNinesysVisible.findFirst({ where: { id_empresa_ninesys: idEmpresa, cod: String(servicio.cod) } }),
+    ]);
+    const productoReal = productos.find((p) => String(p.cod) === String(servicio.cod));
+    if (!visible || !productoReal) {
+      return res.status(400).json({ error: "Servicio no válido para esta empresa" });
+    }
+    servicioConfiable = {
+      cod: visible.cod,
+      name: productoReal.name,
+      categoria: productoReal.categories?.[0]?.id ?? 0,
+      precio: Number(visible.precio),
+    };
+  } catch (err) {
+    return res.status(502).json({ error: err.message });
+  }
 
   const lienzos = await prisma.lienzo.findMany({
     where: {
@@ -272,8 +363,8 @@ ninesysRouter.post("/:idEmpresa/presupuesto", async (req, res) => {
   try {
     const responsable = await getVendedorSugerido(idEmpresa, cliente.phone);
 
-    const productos = lienzos.map((l) => lineaProducto(l, servicio));
-    productos.push(lineaUsoSoftware(lienzos, servicio)); // línea automática, no seleccionable ni removible desde el frontend
+    const productos = lienzos.map((l) => lineaProducto(l, servicioConfiable));
+    productos.push(lineaUsoSoftware(lienzos, servicioConfiable)); // línea automática, no seleccionable ni removible desde el frontend
     const total = redondearCentavos(productos.reduce((suma, p) => suma + p._subtotal, 0));
     const productosNinesys = productos.map(({ _subtotal, ...p }) => p);
 
@@ -349,6 +440,11 @@ ninesysRouter.post("/:idEmpresa/notificar-whatsapp", async (req, res) => {
   if (!phone || !message) {
     return res.status(400).json({ error: "Faltan datos (phone, message)" });
   }
+  // Auditoría de seguridad 2026-09-15: sin esto, cualquier usuario "cliente"
+  // (auto-registrable) podía usar este endpoint como relay para mandar
+  // texto arbitrario a cualquier número, con el WhatsApp Business real de
+  // la empresa -- ver exigirTelefonoPropio() arriba.
+  if (!(await exigirTelefonoPropio(req, res, phone))) return;
 
   try {
     await enviarWhatsapp(idEmpresa, phone, name ?? "", message);

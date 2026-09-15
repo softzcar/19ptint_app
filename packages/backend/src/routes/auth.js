@@ -5,6 +5,7 @@ import { hashPassword, verificarPassword, firmarToken, requireAuth } from "../li
 import { normalizarTelefono } from "../lib/telefono.js";
 import { empresasDondeEsCliente } from "../lib/clienteNinesys.js";
 import { enviarWhatsapp } from "../lib/msgNinesys.js";
+import { limitarIntentosLogin } from "../lib/rateLimit.js";
 
 export const authRouter = Router();
 
@@ -23,7 +24,7 @@ function datosPublicos(usuario) {
 // El alta de usuarios es solo del admin (ver routes/admin.js) — antes había
 // un /registro público, cerrado a propósito: cualquiera con la URL podía
 // crearse una cuenta y consumir CPU del VPS sin que el dueño se enterara.
-authRouter.post("/login", async (req, res) => {
+authRouter.post("/login", limitarIntentosLogin("login", "email"), async (req, res) => {
   const { email, password } = req.body ?? {};
   if (!email || !password) {
     return res.status(400).json({ error: "email y password son requeridos" });
@@ -61,21 +62,25 @@ authRouter.post("/verificar-telefono", async (req, res) => {
   res.json({ estado: "sin_clave" });
 });
 
-authRouter.post("/login-cliente", async (req, res) => {
-  const normalizado = normalizarTelefono(req.body?.telefono);
-  const { password } = req.body ?? {};
-  if (!normalizado || !password) {
-    return res.status(400).json({ error: "teléfono y clave son requeridos" });
+authRouter.post(
+  "/login-cliente",
+  limitarIntentosLogin("login-cliente", (req) => normalizarTelefono(req.body?.telefono)?.e164 ?? ""),
+  async (req, res) => {
+    const normalizado = normalizarTelefono(req.body?.telefono);
+    const { password } = req.body ?? {};
+    if (!normalizado || !password) {
+      return res.status(400).json({ error: "teléfono y clave son requeridos" });
+    }
+    const usuario = await prisma.usuario.findUnique({ where: { telefono: normalizado.e164 } });
+    if (!usuario || !(await verificarPassword(password, usuario.password_hash))) {
+      return res.status(401).json({ error: "Credenciales inválidas" });
+    }
+    if (!usuario.activo) {
+      return res.status(403).json({ error: "Esta cuenta está deshabilitada" });
+    }
+    res.json({ token: firmarToken(usuario), usuario: datosPublicos(usuario) });
   }
-  const usuario = await prisma.usuario.findUnique({ where: { telefono: normalizado.e164 } });
-  if (!usuario || !(await verificarPassword(password, usuario.password_hash))) {
-    return res.status(401).json({ error: "Credenciales inválidas" });
-  }
-  if (!usuario.activo) {
-    return res.status(403).json({ error: "Esta cuenta está deshabilitada" });
-  }
-  res.json({ token: firmarToken(usuario), usuario: datosPublicos(usuario) });
-});
+);
 
 // Autoservicio: genera una clave nueva y la manda por WhatsApp. Sirve tanto
 // para el primer acceso como para "olvidé mi clave" (mismo endpoint).

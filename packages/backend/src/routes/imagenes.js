@@ -410,7 +410,18 @@ imagenesRouter.post(
       return res.status(409).json({ error: "El quitado de fondo debe estar listo antes de hacer upscale" });
     }
     if (!req.file) return res.status(400).json({ error: "No se recibió la imagen" });
-    const metadata = await sharp(req.file.buffer).metadata();
+    // Auditoría de seguridad 2026-09-15: sin este try/catch, un buffer que
+    // no fuera una imagen válida dejaba la promesa de sharp() rechazada sin
+    // capturar -- el proceso no se cae (ver el handler de unhandledRejection
+    // en server.js, agregado por el incidente de GET /lienzos/:id), pero
+    // este request puntual se quedaba colgado sin responder hasta el
+    // timeout del cliente.
+    let metadata;
+    try {
+      metadata = await sharp(req.file.buffer).metadata();
+    } catch {
+      return res.status(400).json({ error: "El archivo recibido no es una imagen válida" });
+    }
     const ruta_procesada = await guardar("procesadas", req.file.buffer, ".png");
     const imagen = await prisma.imagen.update({
       where: { id: req.imagen.id },
