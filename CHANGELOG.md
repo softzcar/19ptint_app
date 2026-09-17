@@ -4,6 +4,9 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/), v
 
 Ver también `ninesys-hub/releases/` para el contexto de negocio detrás de cada cambio (qué problema resolvía, qué otros repos se tocaron junto con este).
 
+## [v1.2.0] - 2026-09-16
+- Fase de seguridad: allowlist de empresa, validación server-side de precio, rate limiting de login, migraciones DB sincronizadas con Producción
+
 ## [v1.1.1] - 2026-09-03
 - Tela/talla en No aplica (evita NaN en app_multi) y tela real movida a observaciones
 
