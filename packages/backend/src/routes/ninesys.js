@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../lib/auth.js";
 import {
   getProductosImpresion,
+  getProductoPorSku,
   buscarClientes,
   crearCliente,
   actualizarCliente,
@@ -223,13 +224,11 @@ function redondearCentavos(n) {
   return Math.round(n * 100) / 100;
 }
 
-// PLACEHOLDER TEMPORAL: el producto real "Uso de software 19print" todavía
-// no existe en el catálogo de Ninesys (confirmado con el usuario). Mientras
-// tanto se reusa el cod del servicio de impresión que el cliente ya eligió
-// en ese presupuesto (ya válido/curado para esa empresa) solo para tener un
-// cod que Ninesys acepte -- el precio real de ese servicio se IGNORA a
-// propósito, esta línea siempre se factura a precio fijo.
-// TODO: reemplazar por el cod real en cuanto exista en Ninesys.
+// Producto real "Uso de software 19print" (creado 2026-09-23 en el catálogo
+// de Ninesys de ambas empresas, $1/metro) -- se resuelve por SKU en cada
+// request vía getProductoPorSku(), nunca se hardcodea el `cod` (distinto en
+// cada empresa, y así se autocorrige si el producto se recrea).
+const SKU_USO_SOFTWARE = "USOSOFTWARE19PRINT";
 const USO_SOFTWARE_PRECIO_METRO = Number(process.env.USO_SOFTWARE_PRECIO_METRO ?? 1);
 
 // Un lienzo -> una línea de producto del presupuesto: cantidad (metros, al
@@ -275,21 +274,23 @@ function notaTela(lienzos) {
 // Línea automática de "uso de software", $1/metro fijo -- ver constante
 // USO_SOFTWARE_PRECIO_METRO arriba. No la elige ni la puede quitar el
 // cliente: se agrega server-side a TODO presupuesto, sumando los metros de
-// todos los lienzos incluidos.
-function lineaUsoSoftware(lienzos, servicio) {
+// todos los lienzos incluidos. `productoUsoSoftware` es el producto REAL
+// resuelto por SKU (ver getProductoPorSku), no el servicio de impresión
+// elegido por el cliente.
+function lineaUsoSoftware(lienzos, productoUsoSoftware) {
   const metrosTotales = lienzos.reduce(
     (suma, l) => suma + Math.ceil((Number(l.alto_usado_mm) / 1000) * 10) / 10,
     0
   );
   const precio = USO_SOFTWARE_PRECIO_METRO;
   return {
-    categoria: servicio.categoria ?? 0,
+    categoria: productoUsoSoftware.categories?.[0]?.id ?? 0,
     talla: "Talla única",
     tela: "No aplica",
     corte: "No aplica",
     precio,
-    producto: "Uso de software 19print (temporal)",
-    cod: servicio.cod, // PLACEHOLDER: mismo cod que el servicio elegido, ver nota arriba
+    producto: productoUsoSoftware.name,
+    cod: productoUsoSoftware.cod,
     cantidad: metrosTotales,
     _subtotal: redondearCentavos(precio * metrosTotales),
   };
@@ -325,14 +326,21 @@ ninesysRouter.post("/:idEmpresa/presupuesto", async (req, res) => {
   // igual que el GET /productos-impresion (catálogo real de Ninesys +
   // curaduría de precio propia).
   let servicioConfiable;
+  let productoUsoSoftware;
   try {
-    const [productos, visible] = await Promise.all([
+    const [productos, visible, usoSoftware] = await Promise.all([
       getProductosImpresion(idEmpresa),
       prisma.servicioNinesysVisible.findFirst({ where: { id_empresa_ninesys: idEmpresa, cod: String(servicio.cod) } }),
+      getProductoPorSku(idEmpresa, SKU_USO_SOFTWARE),
     ]);
     const productoReal = productos.find((p) => String(p.cod) === String(servicio.cod));
     if (!visible || !productoReal) {
       return res.status(400).json({ error: "Servicio no válido para esta empresa" });
+    }
+    if (!usoSoftware) {
+      return res.status(500).json({
+        error: `El producto "Uso de software 19print" (SKU ${SKU_USO_SOFTWARE}) no está configurado en el catálogo de esta empresa.`,
+      });
     }
     servicioConfiable = {
       cod: visible.cod,
@@ -340,6 +348,7 @@ ninesysRouter.post("/:idEmpresa/presupuesto", async (req, res) => {
       categoria: productoReal.categories?.[0]?.id ?? 0,
       precio: Number(visible.precio),
     };
+    productoUsoSoftware = usoSoftware;
   } catch (err) {
     return res.status(502).json({ error: err.message });
   }
@@ -364,7 +373,7 @@ ninesysRouter.post("/:idEmpresa/presupuesto", async (req, res) => {
     const responsable = await getVendedorSugerido(idEmpresa, cliente.phone);
 
     const productos = lienzos.map((l) => lineaProducto(l, servicioConfiable));
-    productos.push(lineaUsoSoftware(lienzos, servicioConfiable)); // línea automática, no seleccionable ni removible desde el frontend
+    productos.push(lineaUsoSoftware(lienzos, productoUsoSoftware)); // línea automática, no seleccionable ni removible desde el frontend
     const total = redondearCentavos(productos.reduce((suma, p) => suma + p._subtotal, 0));
     const productosNinesys = productos.map(({ _subtotal, ...p }) => p);
 

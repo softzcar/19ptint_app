@@ -42,6 +42,18 @@ export async function getProductosImpresion(idEmpresa) {
   return (data ?? []).filter((p) => Boolean(p.es_servicio_de_impresion));
 }
 
+// Busca un producto del catálogo real de Ninesys por SKU -- usado para
+// resolver el `cod` real del producto "Uso de software 19print" en cada
+// empresa (cada una tiene su propio `_id`). Se re-consulta en cada
+// presupuesto en vez de cachear el `cod`: si el producto se recrea o
+// cambia de ID en Ninesys, esto se autocorrige solo, sin tocar código acá.
+export async function getProductoPorSku(idEmpresa, sku) {
+  const { ok, data, status } = await ninesysFetch(idEmpresa, "/products");
+  if (!ok) throw new Error(`GET /products respondió ${status}`);
+  const skuNorm = sku.trim().toUpperCase();
+  return (data ?? []).find((p) => String(p.sku ?? "").trim().toUpperCase() === skuNorm) ?? null;
+}
+
 export async function buscarClientes(idEmpresa, texto) {
   const { ok, data, status } = await ninesysFetch(idEmpresa, `/customers?buscar=${encodeURIComponent(texto)}`);
   if (!ok) throw new Error(`GET /customers respondió ${status}`);
