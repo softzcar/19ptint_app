@@ -1,0 +1,22 @@
+- **Solicitud del Usuario:** Confirmación explícita vía pregunta directa ("¿Desplegamos también a Producción...?") → "Sí, hazlo ahora".
+- **Fecha y Hora:** 2026-09-23 10:45:00
+- **Proyecto(s):** Backend 19print_app + catálogo de Ninesys (bases de datos de las empresas 194 y 208 en Producción)
+- **Archivos Involucrados:**
+  - Bases de datos `api_emp_194` y `api_emp_208` en Producción (`vps-contabo-prod`): tablas `products`, `products_prices`, `categories` (solo en 208)
+  - `19print_app` desplegado a Producción (tag `v1.2.1`, mismo commit `dc85a30` ya verificado en Desarrollo)
+- **Commits Relacionados:**
+  - 19print_app: `dc85a30` (promovido, sin cambios de código respecto a la versión ya verificada en Desarrollo)
+- **Acción Realizada:**
+  1. Creado el producto "Uso de software 19print" en `api_emp_194` de Producción: `_id=166` (distinto del `_id=169` de Desarrollo, esperado -- son secuencias independientes), mismos flags verificados en Desarrollo (`fisico=0`, categoría "DTF" existente `104`), precio $1.00/"Por metro" en `products_prices`.
+  2. Creada la categoría "Servicios" en `api_emp_208` de Producción (`_id=4`, coincide por casualidad con el mismo `_id` que en Desarrollo) y el producto (`_id=14`, también coincide con Desarrollo), mismo precio.
+  3. Desplegado `19print_app` a Producción (`deploy_dtf_prod.sh`, tag `v1.2.1`) -- backend, worker, IA y frontend reiniciados/recompilados en el servidor real.
+- **Inconvenientes y Desafíos:** Ninguno. Repetición directa de los mismos pasos ya probados en Desarrollo minutos antes.
+- **Decisión Final y Justificación:** Desplegar de inmediato tras la confirmación explícita del usuario, dado que el código ya estaba completamente verificado en Desarrollo con una orden real de punta a punta -- no había necesidad de un período de espera adicional.
+- **Herramienta(s) Utilizada(s):** `ssh`/`psql` (creación directa de categoría/producto/precio en Producción), `deploy_dtf_prod.sh` (clave de seguridad + confirmación de versión).
+- **Resultado:** Éxito.
+- **Verificación:** Confirmado vía `GET /products` real contra el servidor de Producción (`curl --resolve` directo al propio servidor, evitando la confusión de DNS ya documentada en tareas anteriores) para ambas empresas: empresa 194 devuelve el producto con `cod=166`, categoría "DTF", precio $1.00; empresa 208 devuelve `cod=14`, categoría "Servicios", precio $1.00 -- ambos con la forma exacta que el código de `lineaUsoSoftware()` espera. No se creó una orden de prueba real en Producción (a diferencia de Desarrollo) para no dejar un presupuesto de prueba visible al staff en el sistema real -- se consideró suficiente la verificación de catálogo real más la prueba end-to-end ya completada en Desarrollo con el mismo código exacto.
+- **Logro Conseguido:** El producto "Uso de software 19print" queda operativo en el flujo real de Producción para ambas empresas -- cualquier presupuesto de DTF generado desde ahora factura la línea de software con el producto real del catálogo, a $1 por metro.
+- **Referencias de Sesión (Contexto):**
+  - Sesión Claude Code: https://claude.ai/code/session_01DGUJFb8c9NYbAFUZLRQfLE
+- **Observaciones de Gemini:** Ninguna pendiente para esta tarea -- Desarrollo y Producción quedan en el mismo estado.
+- **Respuesta de Gemini:** Desplegado y verificado en Producción para las empresas 194 y 208 -- el producto real "Uso de software 19print" ya está operativo en el catálogo real, mismo comportamiento verificado en Desarrollo (fix del backend + catálogo).
