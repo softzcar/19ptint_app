@@ -17,6 +17,7 @@ packages/ai-service/.venv/
 packages/ai-service/bin/
 packages/ai-service/models/
 *.log
+!logs_gemini/*.log
 .DS_Store
 __pycache__/
 *.pyc
